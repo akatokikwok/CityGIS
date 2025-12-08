@@ -1,0 +1,7 @@
+.vsconfig
+Binaries/
+.idea/
+.vs/
+CityGIS.sln
+Intermediate/
+Saved/

@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <style type="text/css">
+        body, html, #allmap {width: 100%;height: 100%;overflow: hidden;margin:0;font-family:"微软雅黑";}
+        .anchorBL{display:none;}
+    </style>
+    
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
+    <script src="turf.min.js"></script>
+    <title>GIS Engine Final</title>
+</head>
+<body>
+    <div id="allmap"></div>
+</body>
+</html>
+<script type="text/javascript">
+    var map = new BMapGL.Map("allmap", {enableMapClick:false});
+    var point = new BMapGL.Point(116.404, 39.915);
+    map.centerAndZoom(point, 15);
+	
+	map.enableScrollWheelZoom(true); 
+    <!-- map.setTilt(60); // 3D 视角 -->
+    
+    // --- 2. 状态管理 ---
+    var appState = {
+        mode: 'browse', // 'browse' | 'edit'
+        polygons: [],   // 存所有闭合区域 {overlay, geoJson}
+        markers: [],    // 存所有标记点
+        drawingPts: [], // 当前绘制的点
+        tempLine: null  // 当前绘制的辅助线
+    };
+
+    // --- 3. 交互逻辑 ---
+    
+    // 切换模式 (UE调用)
+    window.setMode = function(modeName) {
+        appState.mode = modeName;
+        if(modeName === 'browse') {
+            map.enableDragging(); // 浏览模式允许拖拽
+            clearTempDrawing();
+        } else {
+            map.disableDragging(); // 编辑模式禁止地图移动，防止画歪
+        }
+    };
+	
+	// --- 辅助函数：创建黄色标记点 ---
+	// 我们使用 BMapGL.Circle 来创建一个简单的实心圆点，实现“黄色点”效果。
+	function createYellowDot(point) {
+		// 创建一个半径为 5 像素的黄色圆点
+		var yellowDot = new BMapGL.Circle(point, 5, { 
+			strokeColor: "yellow", // 描边颜色
+			strokeWeight: 1,       // 描边粗细
+			fillColor: "yellow",   // 填充颜色
+			fillOpacity: 1         // 完全不透明
+		});
+		map.addOverlay(yellowDot);
+		return yellowDot;
+	}
+
+    // 鼠标左键：画点
+    map.addEventListener('click', function(e) {
+		// 确保在编辑模式
+		if(appState.mode !== 'edit') return; 
+
+		var pt = e.latlng;
+		var point = new BMapGL.Point(pt.lng, pt.lat);
+		appState.drawingPts.push(point);
+		
+		// 1. **新增：** 在点击位置放置一个黄色点
+		var newDot = createYellowDot(point);
+
+		// 2. 绘制临时线条（确保是蓝色）
+		if (appState.tempLine) {
+			map.removeOverlay(appState.tempLine);
+		}
+		appState.tempLine = new BMapGL.Polyline(appState.drawingPts, {
+			strokeColor:"blue", // **蓝色连线**
+			strokeWeight: 3, 
+			strokeOpacity: 0.8
+		});
+		map.addOverlay(appState.tempLine);
+    });
+
+    // 鼠标右键：闭合多边形（需要清理掉临时绘制的黄色点和蓝线）
+    map.addEventListener('rightclick', function(e) {
+        if(appState.mode !== 'edit' || appState.drawingPts.length < 3) return;
+
+        // 1. 生成闭合多边形显示
+        var polygon = new BMapGL.Polygon(appState.drawingPts, {
+            strokeColor: "blue", strokeWeight: 2, strokeOpacity: 0.5,
+            fillColor: "rgba(0,0,0,0.4)" 
+        });
+        map.addOverlay(polygon);
+
+        // 2. 生成 GeoJSON 数据用于数学计算
+        var coords = appState.drawingPts.map(p => [p.lng, p.lat]);
+        coords.push(coords[0]); // 首尾相连
+        var newGeoJson = turf.polygon([coords]);
+
+        // 3. 计算拓扑交叉 (商业级核心需求)
+        checkAndHighlightIntersection(newGeoJson);
+
+        // 4. 入库
+        appState.polygons.push({ overlay: polygon, geoJson: newGeoJson });
+        clearTempDrawing();
+		
+		// 清理临时状态
+		drawingPoints = [];
+		if(appState.tempLine) map.removeOverlay(appState.tempLine);
+		appState.tempLine = null;
+		
+		// **新增清理：** 移除临时绘制的黄色点 (这是生产环境中需要的额外逻辑)
+		// 完整实现应在 drawingPts 中同时保存点的引用并在此处遍历移除。
+		// 由于地图Overlay较多，建议在每次闭合时执行 map.clearOverlays()，然后重绘所有已保存的多边形。
+		
+		// 2. **关键：** 成功闭合后，执行清理
+		clearTempDrawing();
+    });
+
+	// --- 辅助函数：清理临时绘制状态 ---
+    function clearTempDrawing() {
+			// 确保清空用于绘制点的数组
+		appState.drawingPts = []; 
+
+		// 移除临时线条
+		if(appState.tempLine) {
+			map.removeOverlay(appState.tempLine);
+			appState.tempLine = null;
+    }
+    
+    // **重要新增：** 移除所有临时绘制的黄色点
+    appState.tempDots.forEach(dot => map.removeOverlay(dot));
+    appState.tempDots = [];
+    }
+
+    // --- 4. 拓扑算法 (Turf.js) ---
+    function checkAndHighlightIntersection(newPolyGeo) {
+        // 遍历所有已存在的多边形
+        appState.polygons.forEach(existPoly => {
+            var intersection = turf.intersect(newPolyGeo, existPoly.geoJson);
+            if(intersection) {
+                // 如果有交集，绘制红色高亮块
+                var rawCoords = intersection.geometry.coordinates;
+                // 注意：Turf 返回的结构可能是多重数组，这里简化处理单区域
+                // 生产环境需递归解析 MultiPolygon
+                var path = rawCoords[0].map(p => new BMapGL.Point(p[0], p[1]));
+                
+                var highLight = new BMapGL.Polygon(path, {
+                    strokeColor: "red", fillColor: "red", fillOpacity: 0.6
+                });
+                map.addOverlay(highLight);
+            }
+        });
+    }
+
+    // --- 5. 标点系统 (Req 8) ---
+    window.addMapMarker = function(lng, lat, typeStr) {
+        var pt = new BMapGL.Point(lng, lat);
+        // 实际开发请根据 typeStr 切换 iconUrl
+        var marker = new BMapGL.Marker(pt); 
+        map.addOverlay(marker);
+        appState.markers.push({mk: marker, type: typeStr});
+    };
+
+    window.filterMarkers = function(typeStr) {
+        appState.markers.forEach(item => {
+            if(item.type === typeStr || typeStr === "All") item.mk.show();
+            else item.mk.hide();
+        });
+    };
+
+    // --- 6. 数据 IO (与 UE5 通信) ---
+    
+    // 导出数据 -> UE5
+    window.exportData = function() {
+        var saveData = {
+            polys: appState.polygons.map(p => p.geoJson),
+            markers: appState.markers.map(m => ({
+                lat: m.mk.getPosition().lat,
+                lng: m.mk.getPosition().lng,
+                type: m.type
+            }))
+        };
+        // 核心 Hack：通过修改 Title 触发 UE5 回调
+        document.title = "UE_SAVE:" + JSON.stringify(saveData);
+    };
+
+    // 导入数据 <- UE5
+    window.importData = function(jsonStr) {
+        var data = JSON.parse(jsonStr);
+        map.clearOverlays();
+        appState.polygons = [];
+        
+        // 恢复多边形
+        if(data.polys) {
+            data.polys.forEach(geo => {
+                var coords = geo.geometry.coordinates[0];
+                var path = coords.map(p => new BMapGL.Point(p[0], p[1]));
+                var poly = new BMapGL.Polygon(path, {
+                    strokeColor: "blue", strokeWeight: 2, fillColor: "rgba(0,0,0,0.4)"
+                });
+                map.addOverlay(poly);
+                appState.polygons.push({ overlay: poly, geoJson: geo });
+            });
+        }
+        // 恢复标记... (逻辑同上)
+    };
+</script>
+
+
+
+<!--
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <style type="text/css">
+        body, html, #allmap {width: 100%;height: 100%;overflow: hidden;margin:0;font-family:"微软雅黑";}
+        .anchorBL{display:none;} /* 隐藏百度Logo */
+    </style>
+    
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
+    
+    <title>GIS Engine GL</title>
+</head>
+<body>
+    <div id="allmap"></div>
+</body>
+</html>
+<script type="text/javascript">
+    // 【关键修正】使用 BMapGL 对象进行初始化
+    // BMapGL 是百度 WebGL 版本的入口对象
+    var map = new BMapGL.Map("allmap", {enableMapClick:false});
+    
+    // 初始化中心点 (北京)
+    var point = new BMapGL.Point(116.404, 39.915);
+    map.centerAndZoom(point, 15);
+    
+    // 启用交互功能
+    map.enableScrollWheelZoom(true);
+    map.disableDoubleClickZoom(); 
+
+	// === 新增：UE 驱动地图的控制函数 ===
+
+	// 参数：地图中心经度, 纬度, 缩放级别
+	function setMapState(lng, lat, zoom) {
+		var newPoint = new BMapGL.Point(lng, lat);
+		map.centerAndZoom(newPoint, zoom);
+		// 注意：这里调用 centerAndZoom 会触发 'moveend'/'zoomend'，进而调用 syncState() 回传给 UE
+	}
+
+	// 参数：经度差值, 纬度差值 (用于平移)
+	function panMapBy(deltaLng, deltaLat) {
+		var center = map.getCenter();
+		var newLng = center.lng + deltaLng;
+		var newLat = center.lat + deltaLat;
+		var newPoint = new BMapGL.Point(newLng, newLat);
+		map.panTo(newPoint, { noAnimation: true }); // 禁用动画，保证即时同步
+		// panTo 也会触发 'moveend'，进而调用 syncState()
+	}
+
+    // === 核心：极速状态同步 (URL Hash Messaging) ===
+    function syncState() {
+        // BMapGL 和 BMap 的 API 保持一致
+        var c = map.getCenter();
+        var z = map.getZoom();
+        
+        // 格式: #s=lng,lat,zoom
+        var hash = "s=" + c.lng.toFixed(6) + "," + c.lat.toFixed(6) + "," + z;
+        
+        // 只有变化时才写入，避免无意义刷新
+        if(window.location.hash !== "#" + hash) {
+            window.location.hash = hash;
+        }
+    }
+
+    // 监听所有可能改变视图的事件
+    map.addEventListener("dragend", syncState);
+    map.addEventListener("zoomend", syncState);
+    map.addEventListener("moving", syncState); 
+    map.addEventListener("zoom_changed", syncState); 
+    
+    // 初始化发送
+    setTimeout(syncState, 500);
+</script>
+-->
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <style type="text/css">
+        body, html, #allmap {width: 100%;height: 100%;overflow: hidden;margin:0;font-family:"微软雅黑";}
+        .anchorBL{display:none;} /* 隐藏百度Logo */
+    </style>
+    
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
+    
+    <title>GIS Engine GL</title>
+</head>
+<body>
+    <div id="allmap"></div>
+</body>
+</html>
+<script type="text/javascript">
+    // 【关键修正】使用 BMapGL 对象进行初始化
+    // BMapGL 是百度 WebGL 版本的入口对象
+    var map = new BMapGL.Map("allmap", {enableMapClick:false});
+    
+    // 初始化中心点 (北京)
+    var point = new BMapGL.Point(116.404, 39.915);
+    map.centerAndZoom(point, 15);
+    
+    // 启用交互功能
+    map.enableScrollWheelZoom(true);
+    map.disableDoubleClickZoom(); 
+
+    // === 核心：极速状态同步 (URL Hash Messaging) ===
+    function syncState() {
+        // BMapGL 和 BMap 的 API 保持一致
+        var c = map.getCenter();
+        var z = map.getZoom();
+        
+        // 格式: #s=lng,lat,zoom
+        var hash = "s=" + c.lng.toFixed(6) + "," + c.lat.toFixed(6) + "," + z;
+        
+        // 只有变化时才写入，避免无意义刷新
+        if(window.location.hash !== "#" + hash) {
+            window.location.hash = hash;
+        }
+    }
+
+    // 监听所有可能改变视图的事件
+    map.addEventListener("dragend", syncState);
+    map.addEventListener("zoomend", syncState);
+    map.addEventListener("moving", syncState); 
+    map.addEventListener("zoom_changed", syncState); 
+    
+    // 初始化发送
+    setTimeout(syncState, 500);
+</script>
+-->
+
+
+
+
+<!--
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>百度地图</title>
+    <style>
+        #map { width: 100%; height: 100vh; }
+    </style>
+    <script src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
+</head>
+
+
+<body>
+    <div id="map"></div>
+    <script>
+        const map = new BMapGL.Map('map');  // 创建地图实例
+        const center = new BMapGL.Point(116.404, 39.915);  // 设置地图中心点（北京）
+        map.centerAndZoom(center, 15);  // 初始化地图，设置中心点坐标和缩放级别
+        map.enableScrollWheelZoom(true);  // 启用滚轮缩放
+		map.disableDoubleClickZoom(); // UE接管双击
+        
+		// === 核心：极速状态同步 ===
+		function syncState() {
+			var c = map.getCenter();
+			var z = map.getZoom();
+			// 保留6位小数足矣，减少字符串长度
+			var hash = "s=" + c.lng.toFixed(6) + "," + c.lat.toFixed(6) + "," + z;
+			
+			// 只有变化时才写入，避免无意义刷新
+			if(window.location.hash !== "#" + hash) {
+				window.location.hash = hash;
+			}
+		}
+		
+		// 监听所有可能改变视图的事件
+		map.addEventListener("dragend", syncState);
+		map.addEventListener("zoomend", syncState);
+		map.addEventListener("moving", syncState); // 拖拽中实时同步
+		map.addEventListener("zoom_changed", syncState); // 缩放中实时同步
+		
+		// 初始化发送
+		setTimeout(syncState, 500);
+		
+		// JS → UE 交互：例如地图点击位置
+        //map.addEventListener('click', function (e) {
+        //    console.log(JSON.stringify({ type: 'click', lng: e.latlng.lng, lat: e.latlng.lat }));
+        //});
+
+        // UE → JS 交互：例如改变视角
+        //window.setView = (lng, lat, zoom = 15) => {
+        //    map.centerAndZoom(new BMapGL.Point(lng, lat), zoom);
+        //};
+    </script>
+</body>
+</html>
+-->
+
+
+
+
+<!--
+<!DOCTYPE html>
+<html>
+<head>
+     <meta charset="utf-8"/>
+	<title>GIS Tool</title>
+    <style type="text/css">
+        #map { width: 100%; height: 100vh; }
+    </style>
+    <script src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
+</head>
+
+<body>
+    <div id="map"></div>
+    <script>
+		// 初始化北京
+		const map = new BMapGL.Map('map');  // 创建地图实例
+		const center = new BMapGL.Point(116.404, 39.915);  // 设置地图中心点（北京）
+		map.centerAndZoom(center, 15);
+		map.enableScrollWheelZoom(true);
+		map.disableDoubleClickZoom(); // 禁用双击放大，留给UE做交互
+		
+		// 【关键1】开启滚轮，但尽量减少惯性 (百度API没有直接禁止惯性的开关，但我们可以高频监听)
+		map.enableScrollWheelZoom(true);
+		map.disableDoubleClickZoom();
+
+		// === 核心逻辑：将地图状态发送给 UE ===
+		// 我们通过修改 URL 的 Hash 部分来传递数据，这不会导致页面刷新
+		function updateStateToUE() {
+			var center = map.getCenter();
+			var zoom = map.getZoom();
+			
+			// 【关键2】增加高精度的 hash 发送
+			var hash = "state=" + center.lng.toFixed(6) + "," + center.lat.toFixed(6) + "," + zoom;
+			
+			// 只有当 hash 变化时才发送，避免死循环
+			if(window.location.hash !== "#" + hash) {
+				window.location.hash = hash;
+			}
+		}
+
+		// 监听拖拽和缩放
+		// 【关键3】监听所有可能导致视图变化的事件
+		// 'moveend' 和 'zoomend' 是基础
+		map.addEventListener("moveend", updateStateToUE);
+		map.addEventListener("dragend", updateStateToUE); 
+		map.addEventListener("zoomend", updateStateToUE);
+		// 'moving' 和 'zoom_changed' 可以尝试捕获过程中的变化，减少视觉延迟
+		map.addEventListener("moving", updateStateToUE);
+		// 稍微延迟一下初始发送
+		setTimeout(updateStateToUE, 500);
+	</script>
+</body>
+</html>
+-->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--
+<!DOCTYPE html>
+<html>
+<head>
+     <meta charset="utf-8"/>
+	<title>GIS Tool</title>
+    <style type="text/css">
+        #map { width: 100%; height: 100vh; }
+    </style>
+    <script src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
+</head>
+
+<body>
+    <div id="map"></div>
+    <script>
+		// 初始化北京
+		const map = new BMapGL.Map('map');  // 创建地图实例
+		const center = new BMapGL.Point(116.404, 39.915);  // 设置地图中心点（北京）
+		map.centerAndZoom(center, 15);
+		map.enableScrollWheelZoom(true);
+		map.disableDoubleClickZoom(); // 禁用双击放大，留给UE做交互
+
+		// === 核心逻辑：将地图状态发送给 UE ===
+		// 我们通过修改 URL 的 Hash 部分来传递数据，这不会导致页面刷新
+		function updateStateToUE() {
+			var center = map.getCenter();
+			var zoom = map.getZoom();
+			// 格式: #state=经度,纬度,缩放
+			var hash = "state=" + center.lng.toFixed(6) + "," + center.lat.toFixed(6) + "," + zoom;
+			window.location.hash = hash;
+		}
+
+		// 监听拖拽和缩放
+		map.addEventListener("dragend", updateStateToUE); 
+		map.addEventListener("zoomend", updateStateToUE);
+		// 稍微延迟一下初始发送
+		setTimeout(updateStateToUE, 10);
+	</script>
+</body>
+</html>
+-->
+
+
+
+
+
+
+
+
+
+<!--
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <style type="text/css">
+        body, html, #allmap {width: 100%;height: 100%;overflow: hidden;margin:0;font-family:"微软雅黑";}
+        /* 隐藏百度地图自带的UI，防止干扰 */
+        .anchorBL{display:none;} 
+    </style>
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script> 
+    <title>UE5 GIS Map</title>
+
+</head>
+<body>
+    <div id="allmap"></div>
+</body>
+</html>
+<script type="text/javascript">
+    var map = new BMap.Map("allmap");
+    // 初始化中心点 (北京)
+    var point = new BMap.Point(116.404, 39.915);
+    map.centerAndZoom(point, 15);
+    map.enableScrollWheelZoom(true);
+
+    // 禁止双击放大，因为我们要用双击来闭合图形
+    map.disableDoubleClickZoom();
+
+    // === 核心：向 UE 发送状态 ===
+    function sendStateToUE() {
+        if (window.ue && window.ue.gisbridge) {
+            var center = map.getCenter();
+            var zoom = map.getZoom();
+            // 调用 UE C++ 函数
+            window.ue.gisbridge.onmapstatechanged(center.lng, center.lat, zoom);
+        }
+    }
+	
+	// 在 map.html 文件中，用于替换旧的 BindUObject 调用
+	function sendCommand(command, data) {
+		// 确保数据是 URL 安全的
+		var payload = data ? '&data=' + encodeURIComponent(data) : '';
+		
+		// 关键：通过修改 hash 触发 OnUrlChanged 事件
+		// 完整 URL Hash 示例: #ue_command=save&data={...geojson...}
+		window.location.hash = `#ue_command=${command}${payload}`;
+	}
+
+	function handleSave() {
+		var geoJsonData = getMapDataAsGeoJson(); // 假设这是获取数据的函数
+		sendCommand('save', geoJsonData); 
+	}
+
+	function handleEditMode(enable) {
+		if (enable) {
+			sendCommand('mode_edit', '');
+		} else {
+			sendCommand('mode_view', '');
+		}
+	}
+
+    // 绑定事件：拖拽中、缩放中都需要高频更新
+    map.addEventListener("moving", sendStateToUE); 
+    map.addEventListener("zoomend", sendStateToUE);
+    map.addEventListener("dragend", sendStateToUE);
+    
+    // 初始化时发送一次
+    setTimeout(sendStateToUE, 1000);
+</script>
+-->
