@@ -22,7 +22,7 @@
     var map = new BMapGL.Map("map_container");
     map.centerAndZoom(new BMapGL.Point(116.404, 39.915), 18); 
     map.enableScrollWheelZoom(true); 
-    map.setTilt(30); 
+    map.setTilt(70); 
 
     var appState = {
         mode: 'browse', // 'browse'(浏览), 'edit'(绘图), 'snap'(框选吸附)
@@ -183,38 +183,90 @@
     });
 
     function executeBooleanOp(boxGeo) {
+       if (!appState.selectedId) {
+            alert("Bug警告: selectedId 丢失，请重新选中板块！");
+            return;
+        }
+
         var targetObj = appState.polygons.find(p => p.geoJson.properties.id === appState.selectedId);
-        if(!targetObj) return;
+        if (!targetObj) {
+            alert("Bug警告: 内存中找不到 ID 为 " + appState.selectedId + " 的板块");
+            return;
+        }
 
-        // A. 合并 (Union)
-        var unionRes = turf.union(targetObj.geoJson, boxGeo);
-        if(!unionRes) return;
+        try {
+            // ===============================================
+            // 【⭐ 新策略：强制 GeoJSON Feature 结构化 ⭐】
+            // 确保传入 turf.union 的是严格的 Polygon Feature 对象，
+            // 且经过微小缓冲处理，以消除浮点数精度误差。
+            // ===============================================
+            
+            // 1. 目标 GeoJSON 结构化 (确保是 Feature)
+            // 如果它已经是 Feature，turf.feature() 会安全返回自身
+            var targetFeature = turf.feature(targetObj.geoJson.geometry, targetObj.geoJson.properties);
+            
+            // 2. 选框 GeoJSON 缓冲和结构化
+            // 先对选框进行微小缓冲
+            var bufferedBox = turf.buffer(boxGeo, 0.0001, {units: 'degrees'});
+            // 确保它是一个 Feature
+            var boxFeature = turf.feature(bufferedBox.geometry);
 
-        // B. 切除 (Difference) - 遍历所有其他多边形，切掉重叠
-        appState.polygons.forEach(other => {
-            if(other.geoJson.properties.id !== appState.selectedId) {
-                // 如果相交，切掉
-                if(!turf.booleanDisjoint(unionRes, other.geoJson)) {
-                    try {
-                        unionRes = turf.difference(unionRes, other.geoJson);
-                    } catch(err) { console.error("Cut error", err); }
+
+            // A. 第一步：合并 (Union)
+            // 现在传入的 targetFeature 和 boxFeature 都是严格的 GeoJSON Feature<Polygon>
+            var unionRes = turf.union(targetFeature, boxFeature);
+            
+            // 检查 Union 结果是否有效
+            if (!unionRes || unionRes.geometry === null) {
+                // 如果 Union 失败，直接退出并提示
+                alert("GIS运算错误：合并失败。请确保你的吸附框与选中的板块有足够的重叠或接触。");
+                return; 
+            }
+
+            // B. 第二步：切除 (Difference)
+            var currentGeo = unionRes;
+            
+            for (var i = 0; i < appState.polygons.length; i++) {
+                var other = appState.polygons[i];
+                if (other.geoJson.properties.id === appState.selectedId) continue;
+
+                // 检查当前几何体是否有效
+                if (!currentGeo || currentGeo.geometry === null) {
+                    alert("GIS运算错误：切除链中断。上一步操作产生了无效几何体。");
+                    break;
+                }
+                
+                // 确保 other.geoJson 也是 Feature
+                var otherFeature = turf.feature(other.geoJson.geometry, other.geoJson.properties);
+
+                if (!turf.booleanDisjoint(currentGeo, otherFeature)) {
+                    var diffRes = turf.difference(currentGeo, otherFeature);
+                    if (diffRes) {
+                        currentGeo = diffRes;
+                    }
                 }
             }
-        });
 
-        // C. 更新数据
-        if(unionRes) {
-            // 保持旧属性，更新几何
-            unionRes.properties = targetObj.geoJson.properties;
-            unionRes.properties.score = calculateScore(unionRes); // 重算分
+            // C. 数据更新
+            if (!currentGeo || currentGeo.geometry === null) {
+                alert("GIS运算错误：最终几何体无效，操作被取消。");
+                return;
+            }
 
-            // 移除旧图，画新图
+            // 继承属性，重算分...
+            currentGeo.properties = targetObj.geoJson.properties;
+            currentGeo.properties.score = calculateScore(currentGeo);
+
+            // 移除旧图，添加新图
             map.removeOverlay(targetObj.overlay);
-            // 替换数组中的对象
             var idx = appState.polygons.indexOf(targetObj);
-            appState.polygons.splice(idx, 1);
+            if (idx > -1) appState.polygons.splice(idx, 1);
             
-            addPolygonToMap(unionRes, true); // true表示保持选中
+            addPolygonToMap(currentGeo, true); 
+
+        } catch (e) {
+            // 捕获所有其他未知错误，特别是 Turf.js 内部的错误
+            alert("GIS 运算发生最终错误: " + e.message + "\n请检查 GeoJSON 结构。");
         }
     }
 
@@ -276,26 +328,64 @@
     // ============================================
 
     function addPolygonToMap(geoJson, autoSelect=false) {
-        var coords = geoJson.geometry.coordinates[0]; // 简化处理单环
-        var path = coords.map(p => new BMapGL.Point(p[0], p[1]));
+        var geometry = geoJson.geometry;
+        var type = geometry.type;
+        var loops = []; // 存储所有要画的路径
+
+        // --- 核心修复：兼容 Polygon 和 MultiPolygon ---
+        if (type === 'Polygon') {
+            // Polygon 的结构是 [ [x,y], [x,y]... ]
+            // coordinates[0] 是外环，[1]... 是内洞。百度地图GL暂不支持挖洞简单写法，我们只画外环
+            loops.push(geometry.coordinates[0]);
+        } 
+        else if (type === 'MultiPolygon') {
+            // MultiPolygon 结构是 [ [[x,y]...], [[x,y]...] ]
+            // 遍历每一个 Polygon
+            geometry.coordinates.forEach(function(polyCoords) {
+                loops.push(polyCoords[0]); // 取每个多边形的外环
+            });
+        } 
+        else {
+            alert("不支持的几何类型: " + type);
+            return;
+        }
+
+        // --- 绘制逻辑 ---
+        // 百度地图一个 Polygon Overlay 只能是一个闭合环。
+        // 如果是 MultiPolygon，我们需要把它变成一个 Overlay 比较困难，
+        // 简单方案：如果有多个环，我们创建多个 Overlay 但绑定同一个 ID。
+        // *高级方案*：Turf 算出来如果是 Multi，通常意味着你的框选导致了分裂。
         
+        // 这里采用：只绘制第一个（通常是主路网）或者遍历绘制
+        // 为了代码稳健，我们暂时只取 loops[0] 绘制主区域，防止数据结构过于复杂
+        // 如果你需要完美支持多岛屿，需要把 appState.polygons 改为支持 Overlay 数组
+        
+        var mainLoop = loops[0]; 
+        if (!mainLoop) return;
+
+        var path = mainLoop.map(p => new BMapGL.Point(p[0], p[1]));
+
         var overlay = new BMapGL.Polygon(path, {
-            strokeColor: "blue", strokeWeight: 2, strokeOpacity: 0.5,
+            strokeColor: "blue", 
+            strokeWeight: 2, 
+            strokeOpacity: 0.5,
             fillColor: "rgba(0,0,0,0.4)"
         });
 
-        // 绑定点击选中事件
+        // 绑定点击事件
         overlay.addEventListener('click', function(e) {
-            if(appState.mode === 'edit') {
+            if (appState.mode === 'edit') {
                 selectPolygon(geoJson.properties.id);
                 e.domEvent.stopPropagation();
             }
         });
 
         map.addOverlay(overlay);
+        
+        // 入库
         appState.polygons.push({ overlay: overlay, geoJson: geoJson });
 
-        if(autoSelect) selectPolygon(geoJson.properties.id);
+        if (autoSelect) selectPolygon(geoJson.properties.id);
     }
 
     function selectPolygon(id) {
