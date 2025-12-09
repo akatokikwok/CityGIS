@@ -1,4 +1,363 @@
 <!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <style>
+        html, body, #map_container { width: 100%; height: 100%; overflow: hidden; margin: 0; }
+        /* 隐藏百度版权(商业发布需获授权) */
+        .anchorBL, .BMap_cpyCtrl { display: none; } 
+    </style>
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
+    <script src="turf.min.js"></script>
+</head>
+<body>
+    <div id="map_container"></div>
+</body>
+</html>
+
+<script>
+    // ============================================
+    // 1. 全局状态管理 (State Management)
+    // ============================================
+    var map = new BMapGL.Map("map_container");
+    map.centerAndZoom(new BMapGL.Point(116.404, 39.915), 18); 
+    map.enableScrollWheelZoom(true); 
+    map.setTilt(30); 
+
+    var appState = {
+        mode: 'browse', // 'browse'(浏览), 'edit'(绘图), 'snap'(框选吸附)
+        polygons: [],   // 存所有板块: [{overlay, geoJson, id}]
+        drawingPts: [], // 当前正在画的点数组
+        tempDots: [],   // 当前画出的黄色临时点
+        tempLine: null, // 当前画出的蓝色临时线
+        selectedId: null, // 当前选中的板块ID
+        dragStart: null,  // 框选起手点
+        snapRect: null    // 框选的临时矩形
+    };
+
+    var ID_COUNTER = 1; // 简单的ID生成器
+
+    // ============================================
+    // 2. 交互模式控制 (UE5 -> JS 接口)
+    // ============================================
+    window.setMode = function(modeName) {
+        appState.mode = modeName;
+        console.log("Mode Switch:", modeName);
+        
+        if(modeName === 'browse') {
+            map.enableDragging();
+            clearTempDrawing();
+            deselectAll();
+        } else if (modeName === 'edit') {
+            map.disableDragging(); // 编辑时禁止拖拽以防误触
+        } else if (modeName === 'snap') {
+            map.disableDragging();
+            if(!appState.selectedId) {
+                alert("请先在编辑模式下点选一个板块！");
+                window.setMode('edit'); // 回退
+            }
+        }
+    };
+
+    // ============================================
+    // 3. 核心绘图逻辑 (点、线、面)
+    // ============================================
+    
+    // 辅助：画黄色点
+    function createYellowDot(pt) {
+        var dot = new BMapGL.Circle(pt, 5, { 
+            strokeColor: "yellow", strokeWeight: 1, fillColor: "yellow", fillOpacity: 1 
+        });
+        map.addOverlay(dot);
+        return dot;
+    }
+
+    // 事件：左键点击 (画点)
+    map.addEventListener('click', function(e) {
+        if(appState.mode !== 'edit') return;
+
+        var pt = e.latlng; // 获取点击经纬度
+        var bPoint = new BMapGL.Point(pt.lng, pt.lat);
+        
+        // 记录数据
+        appState.drawingPts.push(bPoint);
+        
+        // 视觉：画黄点
+        var dot = createYellowDot(bPoint);
+        appState.tempDots.push(dot);
+
+        // 视觉：画蓝线 (连接所有点)
+        updateTempLine();
+    });
+
+    function updateTempLine() {
+        if (appState.tempLine) map.removeOverlay(appState.tempLine);
+        if (appState.drawingPts.length > 0) {
+            appState.tempLine = new BMapGL.Polyline(appState.drawingPts, {
+                strokeColor: "blue", strokeWeight: 3, strokeOpacity: 0.8
+            });
+            map.addOverlay(appState.tempLine);
+        }
+    }
+
+    // 事件：右键点击 (闭合多边形)
+    map.addEventListener('rightclick', function(e) {
+        if(appState.mode !== 'edit' || appState.drawingPts.length < 3) return;
+
+        // 1. 构建 GeoJSON (Turf 格式)
+        var coords = appState.drawingPts.map(p => [p.lng, p.lat]);
+        coords.push(coords[0]); // 闭合
+        var geoPoly = turf.polygon([coords]);
+        
+        // 2. 赋予属性 (ID, 名字, 分数)
+        geoPoly.properties = {
+            id: 'poly_' + (ID_COUNTER++),
+            name: '未命名板块',
+            score: calculateScore(geoPoly)
+        };
+
+        // 3. 生成并保存
+        addPolygonToMap(geoPoly);
+
+        // 4. 清理临时绘画
+        clearTempDrawing();
+    });
+
+    // 辅助：计算分数 (需求 d)
+    function calculateScore(geo) {
+        var area = turf.area(geo);
+        // 简单的打分公式：面积 * 0.1
+        return Math.floor(area * 0.1); 
+    }
+
+    // ============================================
+    // 4. 进阶功能：吸附框选 (Snapping Logic)
+    // ============================================
+    // 逻辑：画个框 -> 框与选中板块 Union (合并) -> 结果与所有其他板块 Difference (切除)
+
+    map.addEventListener('mousedown', function(e) {
+        if(appState.mode === 'snap') {
+            appState.dragStart = e.latlng;
+        }
+    });
+
+    map.addEventListener('mousemove', function(e) {
+        if(appState.mode === 'snap' && appState.dragStart) {
+            // 画绿色虚线框示意
+            var p1 = appState.dragStart;
+            var p2 = e.latlng;
+            var path = [
+                new BMapGL.Point(p1.lng, p1.lat), new BMapGL.Point(p2.lng, p1.lat),
+                new BMapGL.Point(p2.lng, p2.lat), new BMapGL.Point(p1.lng, p2.lat)
+            ];
+            if(appState.snapRect) map.removeOverlay(appState.snapRect);
+            appState.snapRect = new BMapGL.Polygon(path, {
+                strokeColor: "green", strokeWeight: 2, strokeStyle: 'dashed', fillColor: "transparent"
+            });
+            map.addOverlay(appState.snapRect);
+        }
+    });
+
+    map.addEventListener('mouseup', function(e) {
+        if(appState.mode === 'snap' && appState.dragStart) {
+            var p1 = appState.dragStart;
+            var p2 = e.latlng;
+            
+            // 1. 构造选框 GeoJSON
+            var boxGeo = turf.bboxPolygon([
+                Math.min(p1.lng, p2.lng), Math.min(p1.lat, p2.lat),
+                Math.max(p1.lng, p2.lng), Math.max(p1.lat, p2.lat)
+            ]);
+
+            // 2. 执行布尔运算
+            executeBooleanOp(boxGeo);
+
+            // 3. 清理
+            if(appState.snapRect) map.removeOverlay(appState.snapRect);
+            appState.dragStart = null;
+            appState.snapRect = null;
+            
+            // 自动切回编辑模式
+            window.setMode('edit'); 
+        }
+    });
+
+    function executeBooleanOp(boxGeo) {
+        var targetObj = appState.polygons.find(p => p.geoJson.properties.id === appState.selectedId);
+        if(!targetObj) return;
+
+        // A. 合并 (Union)
+        var unionRes = turf.union(targetObj.geoJson, boxGeo);
+        if(!unionRes) return;
+
+        // B. 切除 (Difference) - 遍历所有其他多边形，切掉重叠
+        appState.polygons.forEach(other => {
+            if(other.geoJson.properties.id !== appState.selectedId) {
+                // 如果相交，切掉
+                if(!turf.booleanDisjoint(unionRes, other.geoJson)) {
+                    try {
+                        unionRes = turf.difference(unionRes, other.geoJson);
+                    } catch(err) { console.error("Cut error", err); }
+                }
+            }
+        });
+
+        // C. 更新数据
+        if(unionRes) {
+            // 保持旧属性，更新几何
+            unionRes.properties = targetObj.geoJson.properties;
+            unionRes.properties.score = calculateScore(unionRes); // 重算分
+
+            // 移除旧图，画新图
+            map.removeOverlay(targetObj.overlay);
+            // 替换数组中的对象
+            var idx = appState.polygons.indexOf(targetObj);
+            appState.polygons.splice(idx, 1);
+            
+            addPolygonToMap(unionRes, true); // true表示保持选中
+        }
+    }
+
+    // ============================================
+    // 5. 通用功能 (撤销, 保存, 加载, 搜索)
+    // ============================================
+
+    // 撤销上一个点
+    window.undoLastPoint = function() {
+        if(appState.mode !== 'edit' || appState.drawingPts.length === 0) return;
+        
+        appState.drawingPts.pop(); // 移除数据
+        
+        var dot = appState.tempDots.pop(); // 移除视觉点
+        if(dot) map.removeOverlay(dot);
+        
+        updateTempLine(); // 重绘线
+    };
+
+    // 导出数据 (供UE5调用)
+    window.exportData = function() {
+        var data = appState.polygons.map(p => p.geoJson);
+        // Hack: 修改标题触发 UE5 监听
+        document.title = "UE_SAVE:" + JSON.stringify(data);
+    };
+
+    // 导入数据 (供UE5调用)
+    window.importData = function(jsonStr) {
+        map.clearOverlays();
+        appState.polygons = [];
+        appState.drawingPts = []; // 清理
+        
+        var list = JSON.parse(jsonStr);
+        list.forEach(geo => {
+            // 恢复最大ID防止重复
+            var pid = parseInt(geo.properties.id.split('_')[1]);
+            if(pid >= ID_COUNTER) ID_COUNTER = pid + 1;
+            
+            addPolygonToMap(geo);
+        });
+    };
+    
+    // 搜索
+    window.searchPoly = function(name) {
+        var found = appState.polygons.find(p => p.geoJson.properties.name === name);
+        if(found) {
+            // 聚焦
+            var path = found.overlay.getPath();
+            var b = new BMapGL.Bounds();
+            path.forEach(pt => b.extend(pt));
+            map.setViewport(b);
+            // 选中
+            selectPolygon(found.geoJson.properties.id);
+        }
+    };
+
+    // ============================================
+    // 6. 辅助工具函数
+    // ============================================
+
+    function addPolygonToMap(geoJson, autoSelect=false) {
+        var coords = geoJson.geometry.coordinates[0]; // 简化处理单环
+        var path = coords.map(p => new BMapGL.Point(p[0], p[1]));
+        
+        var overlay = new BMapGL.Polygon(path, {
+            strokeColor: "blue", strokeWeight: 2, strokeOpacity: 0.5,
+            fillColor: "rgba(0,0,0,0.4)"
+        });
+
+        // 绑定点击选中事件
+        overlay.addEventListener('click', function(e) {
+            if(appState.mode === 'edit') {
+                selectPolygon(geoJson.properties.id);
+                e.domEvent.stopPropagation();
+            }
+        });
+
+        map.addOverlay(overlay);
+        appState.polygons.push({ overlay: overlay, geoJson: geoJson });
+
+        if(autoSelect) selectPolygon(geoJson.properties.id);
+    }
+
+    function selectPolygon(id) {
+        appState.selectedId = id;
+        appState.polygons.forEach(p => {
+            if(p.geoJson.properties.id === id) {
+                p.overlay.setStrokeColor("red"); // 选中变红
+                p.overlay.setStrokeWeight(4);
+            } else {
+                p.overlay.setStrokeColor("blue");
+                p.overlay.setStrokeWeight(2);
+            }
+        });
+    }
+
+    function deselectAll() {
+        appState.selectedId = null;
+        appState.polygons.forEach(p => {
+            p.overlay.setStrokeColor("blue");
+            p.overlay.setStrokeWeight(2);
+        });
+    }
+
+    function clearTempDrawing() {
+        appState.drawingPts = [];
+        appState.tempDots.forEach(d => map.removeOverlay(d));
+        appState.tempDots = [];
+        if(appState.tempLine) map.removeOverlay(appState.tempLine);
+        appState.tempLine = null;
+    }
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- <!DOCTYPE html>
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
@@ -24,6 +383,235 @@
 	map.enableScrollWheelZoom(true); 
     <!-- map.setTilt(60); // 3D 视角 -->
     
+    // 全局状态升级
+    var appState = {
+        mode: 'browse', // browse | edit | snap (新增吸附模式)
+        polygons: [],   // 存储结构: { overlay: BMapObject, geoJson: TurfObject }
+        selectedId: null, // 当前选中的板块ID (用于吸附操作)
+        history: [],    // 用于撤销栈
+        // ... 其他临时变量
+    };
+
+    // 辅助：生成唯一默认名
+    function generateUniqueName() {
+        let base = "未命名板块";
+        let count = 1;
+        while (appState.polygons.some(p => p.geoJson.properties.name === `${base}_${count}`)) {
+            count++;
+        }
+        return `${base}_${count}`;
+    }
+
+    // 引入 Turf.js 的布尔运算模块 (需确保 turf.min.js 完整版包含 boolean 模块)
+
+/**
+ * 执行吸附逻辑 (对应需求 a.iii)
+ * @param {Object} snapBoxGeoJson - 用户画出的矩形框 GeoJSON
+ */
+function executeSnap(snapBoxGeoJson) {
+    if (!appState.selectedId) {
+        alert("请先选择一个要编辑的板块！");
+        return;
+    }
+
+    // 1. 找到当前选中的板块
+    let targetIndex = appState.polygons.findIndex(p => p.geoJson.properties.id === appState.selectedId);
+    if (targetIndex === -1) return;
+    let targetPoly = appState.polygons[targetIndex];
+
+    // 2. 第一步：合并 (Union) - 将矩形框并入原板块
+    // 这实现了"最大程度填满长方形选框"
+    var unionResult = turf.union(targetPoly.geoJson, snapBoxGeoJson);
+
+    if (!unionResult) return; // 合并失败（无重叠可能导致 null）
+
+    // 3. 第二步：切除 (Difference) - 保证"不越过已有的其他多边形"
+    // 遍历所有其他多边形，如果有重叠，就切掉重叠部分
+    appState.polygons.forEach(otherPoly => {
+        if (otherPoly.geoJson.properties.id !== appState.selectedId) {
+            // 检查是否相交，如果相交则执行差集运算
+            if (!turf.booleanDisjoint(unionResult, otherPoly.geoJson)) {
+                try {
+                    unionResult = turf.difference(unionResult, otherPoly.geoJson);
+                } catch (e) {
+                    console.warn("裁剪计算异常，可能是几何错误", e);
+                }
+            }
+        }
+    });
+
+    // 4. 更新数据与视图
+    if (unionResult) {
+        // 记录历史用于撤销
+        saveHistory(); 
+        
+        // 移除旧的图形
+        map.removeOverlay(targetPoly.overlay);
+        
+        // 继承旧属性 (ID, Name, Desc)，更新几何数据
+        unionResult.properties = targetPoly.geoJson.properties;
+        
+        // 重新绘制并计算分数
+        updatePolygonGeometry(targetIndex, unionResult);
+    }
+}
+
+    // 辅助：更新几何体并重绘
+    function updatePolygonGeometry(index, newGeoJson) {
+        // 重新计算分数 (需求 d)
+        calculateScore(newGeoJson);
+        
+        // 生成百度地图 Overlay
+        var coords = newGeoJson.geometry.coordinates; // 注意处理 MultiPolygon
+        // 这里简化处理单多边形，实际需递归
+        var path = coords[0].map(p => new BMapGL.Point(p[0], p[1]));
+        
+        var newOverlay = new BMapGL.Polygon(path, {
+            strokeColor: "blue", strokeWeight: 2, fillColor: "rgba(0,0,0,0.4)"
+        });
+        
+        // 绑定点击事件用于"选中"
+        newOverlay.addEventListener('click', function(e) {
+            if (appState.mode === 'edit') {
+                selectPolygon(newGeoJson.properties.id);
+                // 阻止地图底图的点击传播
+                e.domEvent.stopPropagation(); 
+            }
+        });
+
+        map.addOverlay(newOverlay);
+        
+        // 更新内存数据
+        appState.polygons[index] = { overlay: newOverlay, geoJson: newGeoJson };
+        
+        // 如果是当前选中，加高亮边框
+        if(appState.selectedId === newGeoJson.properties.id) highlightPolygon(newOverlay);
+    }
+
+     // 计算分数 (需求 d)
+    function calculateScore(geoJson) {
+        // 示例算法：基于面积和顶点数量
+        var area = turf.area(geoJson); // 平方米
+        var points = turf.explode(geoJson).features.length; // 顶点数
+        
+        // 假定的业务公式
+        var subScore1 = Math.floor(area * 0.1); 
+        var subScore2 = points * 5;
+        
+        geoJson.properties.scores = {
+            areaScore: subScore1,
+            complexityScore: subScore2,
+            total: subScore1 + subScore2
+        };
+        
+        // 更新质心 (需求 a.i 添加质心)
+        var center = turf.centerOfMass(geoJson);
+        geoJson.properties.center = center.geometry.coordinates;
+        
+        // 可视化质心（可选）
+        // renderCentroidMarker(center, geoJson.properties.name);
+    }
+
+    // 供 UE5 调用：搜索多边形
+    window.searchPolygon = function(keyword) {
+        var found = appState.polygons.find(p => p.geoJson.properties.name === keyword);
+        
+        if (found) {
+            // 1. 高亮展示
+            selectPolygon(found.geoJson.properties.id);
+            
+            // 2. 跳转视口 (Get Bounds and Zoom)
+            var path = found.overlay.getPath();
+            var bounds = new BMapGL.Bounds();
+            path.forEach(pt => bounds.extend(pt));
+            map.setViewport(bounds); // 自动缩放至多边形范围
+            
+            return JSON.stringify(found.geoJson.properties); // 返回属性给 UE5 显示
+        } else {
+            return "NOT_FOUND";
+        }
+    };
+
+    function selectPolygon(id) {
+        appState.selectedId = id;
+        // 遍历所有 Overlay，重置颜色，唯独高亮 ID 匹配的
+        appState.polygons.forEach(p => {
+            if (p.geoJson.properties.id === id) {
+                p.overlay.setStrokeColor("red"); // 高亮色
+                p.overlay.setStrokeWeight(4);
+            } else {
+                p.overlay.setStrokeColor("blue"); // 默认色
+                p.overlay.setStrokeWeight(2);
+            }
+        });
+    }
+
+
+    // 鼠标交互状态机
+    var dragStartPoint = null;
+    var rectOverlay = null;
+
+    map.addEventListener('mousedown', function(e) {
+        if (appState.mode === 'snap') {
+            dragStartPoint = e.latlng;
+            map.disableDragging(); // 画框时禁止地图移动
+        }
+    });
+
+    map.addEventListener('mousemove', function(e) {
+        if (appState.mode === 'snap' && dragStartPoint) {
+            // 实时绘制矩形框视觉反馈
+            var currentPoint = e.latlng;
+            drawTempRect(dragStartPoint, currentPoint);
+        }
+    });
+
+    map.addEventListener('mouseup', function(e) {
+        if (appState.mode === 'snap' && dragStartPoint) {
+            var dragEndPoint = e.latlng;
+            
+            // 1. 构造矩形 GeoJSON
+            // 注意：Turf 需要 [minX, minY, maxX, maxY] 或 Polygon 坐标闭环
+            var coords = [[
+                [dragStartPoint.lng, dragStartPoint.lat],
+                [dragEndPoint.lng, dragStartPoint.lat],
+                [dragEndPoint.lng, dragEndPoint.lat],
+                [dragStartPoint.lng, dragEndPoint.lat],
+                [dragStartPoint.lng, dragStartPoint.lat] // 闭合
+            ]];
+            var snapBox = turf.polygon(coords);
+            
+            // 2. 执行核心吸附计算
+            executeSnap(snapBox);
+            
+            // 3. 清理
+            if(rectOverlay) map.removeOverlay(rectOverlay);
+            dragStartPoint = null;
+            rectOverlay = null;
+            map.enableDragging();
+        }
+    });
+
+    function drawTempRect(pt1, pt2) {
+        if(rectOverlay) map.removeOverlay(rectOverlay);
+        var rectPoints = [
+            new BMapGL.Point(pt1.lng, pt1.lat),
+            new BMapGL.Point(pt2.lng, pt1.lat),
+            new BMapGL.Point(pt2.lng, pt2.lat),
+            new BMapGL.Point(pt1.lng, pt2.lat)
+        ];
+        rectOverlay = new BMapGL.Polygon(rectPoints, {
+            strokeColor: "green", strokeWeight: 2, strokeStyle: 'dashed', fillColor: "transparent"
+        });
+        map.addOverlay(rectOverlay);
+    }
+
+
+
+
+
+
+
     // --- 2. 状态管理 ---
     var appState = {
         mode: 'browse', // 'browse' | 'edit'
@@ -208,7 +796,7 @@
         }
         // 恢复标记... (逻辑同上)
     };
-</script>
+</script> -->
 
 
 

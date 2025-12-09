@@ -5,61 +5,71 @@
 
 void UGISWebWidget::NativeConstruct()
 {
-	Super::NativeConstruct();
+    Super::NativeConstruct();
 
-	// 1. 动态加载本地 HTML (处理路径问题)
-	FString HtmlFile = FPaths::ProjectContentDir() + TEXT("HTML/map_engine.html");
-	FString Url = TEXT("file://") + FPaths::ConvertRelativePathToFull(HtmlFile);
+    // 1. 设置存档路径: Saved/GISData/Data.json
+    SaveFilePath = FPaths::ProjectSavedDir() + TEXT("GISData/Data.json");
 
-	if (MainBrowser)
-	{
-		MainBrowser->LoadURL(FString::Printf(TEXT("file:///E:/Work/Project/CityGIS/CityGIS/Content/HTML/map_engine.html")));
-		// 绑定通信监听
-		MainBrowser->OnUrlChanged.AddDynamic(this, &UGISWebWidget::OnTitleChanged);
-	}
+    // 2. 加载本地网页
+    if (MapBrowser)
+    {
+        FString HtmlPath = FPaths::ProjectContentDir() + TEXT("HTML/map_engine.html");
+        FString Url = TEXT("file://") + FPaths::ConvertRelativePathToFull(HtmlPath);
+        MapBrowser->LoadURL(Url);
 
-	SavePath = FPaths::ProjectSavedDir() + TEXT("GISData/Level_1.json");
+        // 绑定通信
+        MapBrowser->OnUrlChanged.AddDynamic(this, &UGISWebWidget::OnTitleChanged);
+    }
 }
 
-void UGISWebWidget::ToggleMode(bool bIsEdit)
+void UGISWebWidget::SetMode(FString ModeName)
 {
-	if (!MainBrowser) return;
-	FString Mode = bIsEdit ? TEXT("edit") : TEXT("browse");
-	FString Script = FString::Printf(TEXT("setMode('%s');"), *Mode);
-	MainBrowser->ExecuteJavascript(Script);
+    if(MapBrowser) {
+        // 调用 JS 函数: setMode('...')
+        FString Script = FString::Printf(TEXT("setMode('%s');"), *ModeName);
+        MapBrowser->ExecuteJavascript(Script);
+    }
 }
 
-void UGISWebWidget::SaveData()
+void UGISWebWidget::UndoAction()
 {
-	// 发送指令给 JS，让 JS 整理数据
-	if (MainBrowser) MainBrowser->ExecuteJavascript(TEXT("exportData();"));
+    if(MapBrowser) MapBrowser->ExecuteJavascript(TEXT("undoLastPoint();"));
+}
+
+void UGISWebWidget::SaveMap()
+{
+    // 触发 JS 导出 -> JS 改 Title -> OnTitleChanged 捕获 -> 写文件
+    if(MapBrowser) MapBrowser->ExecuteJavascript(TEXT("exportData();"));
 }
 
 void UGISWebWidget::OnTitleChanged(const FText& TitleText)
 {
-	FString TitleStr = TitleText.ToString();
-	// 拦截特定协议头
-	if (TitleStr.StartsWith(TEXT("UE_SAVE:")))
-	{
-		FString JsonContent = TitleStr.RightChop(8); // 去掉头
-		FFileHelper::SaveStringToFile(JsonContent, *SavePath);
-		UE_LOG(LogTemp, Log, TEXT("GIS Data Saved to: %s"), *SavePath);
-	}
+    FString TitleStr = TitleText.ToString();
+    // 拦截协议头 "UE_SAVE:"
+    if (TitleStr.StartsWith("UE_SAVE:"))
+    {
+        FString JsonData = TitleStr.RightChop(8); // 截取后面的 JSON
+        FFileHelper::SaveStringToFile(JsonData, *SaveFilePath);
+        UE_LOG(LogTemp, Warning, TEXT("Map Saved to: %s"), *SaveFilePath);
+    }
 }
 
-void UGISWebWidget::LoadData()
+void UGISWebWidget::LoadMap()
 {
-	FString JsonContent;
-	if (FFileHelper::LoadFileToString(JsonContent, *SavePath))
-	{
-		// 清洗换行符，防止 JS 报错
-		JsonContent = JsonContent.Replace(TEXT("\n"), TEXT("")).Replace(TEXT("\r"), TEXT(""));
-		FString Script = FString::Printf(TEXT("importData('%s');"), *JsonContent);
-		MainBrowser->ExecuteJavascript(Script);
-	}
+    FString JsonContent;
+    if (FFileHelper::LoadFileToString(JsonContent, *SaveFilePath))
+    {
+        // 清理换行符
+        JsonContent = JsonContent.Replace(TEXT("\n"), TEXT("")).Replace(TEXT("\r"), TEXT(""));
+        FString Script = FString::Printf(TEXT("importData('%s');"), *JsonContent);
+        MapBrowser->ExecuteJavascript(Script);
+    }
 }
 
-void UGISWebWidget::AddMarkerAtCenter(FString Type)
+void UGISWebWidget::SearchByName(FString Name)
 {
-	// 获取当前地图中心并标记 (需 JS 端配合 getCenter 接口，此处略，逻辑类似)
+    if(MapBrowser) {
+        FString Script = FString::Printf(TEXT("searchPoly('%s');"), *Name);
+        MapBrowser->ExecuteJavascript(Script);
+    }
 }
