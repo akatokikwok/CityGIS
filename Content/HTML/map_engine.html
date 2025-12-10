@@ -16,7 +16,8 @@
 </html>
 
 <script>
-    // ============================================
+    {
+            // ============================================
     // 1. 全局配置与状态
     // ============================================
     var map = new BMapGL.Map("map_container");
@@ -26,15 +27,16 @@
 
     var appState = {
         mode: 'browse', // browse | edit | snap | reconstruct
-        polygons: [],   // 存现有板块: {overlay, geoJson}
+        polygons: [],   // 【永久数据库】存现有板块: {overlay, geoJson}
         
         // --- 手绘相关状态 ---
         isDrawing: false,
-        drawPath: [],   // 实时手绘路径点
-        tempPolyline: null, // 实时绘制的线
+        drawPath: [],   
+        tempPolyline: null, 
         
-        // --- 分析结果缓存 (用于清理高亮) ---
-        analysisOverlays: [] 
+        // --- 分析结果临时缓存 ---
+        analysisOverlays: [], // 存屏幕上的临时 Overlay (用于清除)
+        tempResultData: []    // 存计算出的 GeoJSON 数据 (用于保存)
     };
 
     var ID_COUNTER = 1; 
@@ -46,49 +48,39 @@
         appState.mode = modeName;
         console.log("Mode:", modeName);
         
-        clearAnalysis(); // 切换模式清理高亮
+        // 切换模式时，清理掉未保存的临时高亮
+        clearAnalysis(); 
         clearTempDrawing();
 
         if(modeName === 'browse') {
             map.enableDragging();
         } else {
-            // Edit, Snap, Reconstruct 模式下全部禁止地图拖拽，启用手绘
             map.disableDragging();
         }
     };
 
     // ============================================
-    // 3. 核心交互：按住拖拽画图 (需求三)
+    // 3. 核心交互：按住拖拽画图
     // ============================================
     
-    // --- 鼠标按下：开始绘制 ---
     map.addEventListener('mousedown', function(e) {
-        // 仅在非浏览模式下生效
         if(appState.mode === 'browse') return;
-
         appState.isDrawing = true;
-        appState.drawPath = []; // 清空路径
-        
-        // 记录起点
-        var pt = e.latlng;
-        appState.drawPath.push(new BMapGL.Point(pt.lng, pt.lat));
+        appState.drawPath = [];
+        appState.drawPath.push(new BMapGL.Point(e.latlng.lng, e.latlng.lat));
     });
 
-    // --- 鼠标移动：记录轨迹 ---
     map.addEventListener('mousemove', function(e) {
         if(!appState.isDrawing || appState.mode === 'browse') return;
 
         var pt = e.latlng;
-        var lastPt = appState.drawPath[appState.drawPath.length - 1];
-
-        // 节流：如果移动距离太小（小于0.00001度），不记录点，优化性能
-        if (Math.abs(pt.lng - lastPt.lng) < 0.00001 && Math.abs(pt.lat - lastPt.lat) < 0.00001) {
-            return;
-        }
+        // 节流优化
+        var last = appState.drawPath[appState.drawPath.length - 1];
+        if (Math.abs(pt.lng - last.lng) < 0.00001 && Math.abs(pt.lat - last.lat) < 0.00001) return;
 
         appState.drawPath.push(new BMapGL.Point(pt.lng, pt.lat));
 
-        // 实时绘制视觉反馈 (蓝色线)
+        // 视觉反馈
         if(appState.tempPolyline) map.removeOverlay(appState.tempPolyline);
         appState.tempPolyline = new BMapGL.Polyline(appState.drawPath, {
             strokeColor: "blue", strokeWeight: 2, strokeOpacity: 0.8
@@ -96,58 +88,43 @@
         map.addOverlay(appState.tempPolyline);
     });
 
-    // --- 鼠标抬起：结束绘制并闭合 ---
     map.addEventListener('mouseup', function(e) {
         if(!appState.isDrawing || appState.mode === 'browse') return;
         appState.isDrawing = false;
 
-        // 至少要有3个点
         if(appState.drawPath.length < 3) {
             clearTempDrawing();
             return;
         }
 
-        // 1. 自动闭合路径
+        // 闭合与平滑
         appState.drawPath.push(appState.drawPath[0]);
-
-        // 2. 转换为 GeoJSON 并平滑处理 (Simplify)
-        // 手绘的点极其密集，必须简化，否则后续计算会卡死
         var rawGeo = ptsToGeoJSON(appState.drawPath);
         var options = {tolerance: 0.00001, highQuality: false};
         var simplifiedGeo = turf.simplify(rawGeo, options);
 
-        // 3. 根据模式分发逻辑
+        // 分发逻辑
         if (appState.mode === 'edit') {
-            // 编辑模式：直接生成板块
-            finalizePolygon(simplifiedGeo);
+            finalizePolygon(simplifiedGeo); // 编辑模式直接保存
         } 
         else if (appState.mode === 'reconstruct') {
-            // 重构模式：执行复杂的重叠分析 (需求一 & 二)
-            executeReconstructAnalysis(simplifiedGeo);
+            executeReconstructAnalysis(simplifiedGeo); // 重构模式进入分析
         }
-        else if (appState.mode === 'snap') {
-             // 吸附模式逻辑 (此处保留接口，逻辑同之前)
-             // executeSnap(simplifiedGeo); 
-        }
-
+        
         clearTempDrawing();
     });
 
     // ============================================
-    // 4. 核心算法：复杂重叠分析 (需求一 & 二)
+    // 4. 核心算法：复杂重叠分析与保存
     // ============================================
     function executeReconstructAnalysis(polyX) {
-        // polyX 是我们手绘的区域 (X)
-        // 目标：
-        // 1. 找出 A 和 B 的重叠 C。
-        // 2. X 与 C 重叠 -> 淡红色。
-        // 3. X 与 (A U B) 重叠 但排除 C -> 紫色。
-        // 4. 所有重叠的边线 -> 橙色。
-        
-        clearAnalysis(); // 清除上次的高亮
+        // 1. 先清理上一次的临时结果
+        clearAnalysis(); 
+        appState.tempResultData = []; // 清空数据缓存
 
         if (appState.polygons.length === 0) {
-            alert("地图上没有其他多边形，无法分析重叠。");
+            alert("地图空白，直接生成新区域。");
+            finalizePolygon(polyX);
             return;
         }
 
@@ -155,157 +132,238 @@
             var featureX = turf.feature(polyX.geometry);
             var existingFeatures = appState.polygons.map(p => turf.feature(p.geoJson.geometry));
 
-            // --- 步骤 A: 预计算现有的所有重叠 (C) ---
-            // 这是一个 O(N^2) 操作，为了性能，我们只计算与 X BBox 相交的板块
-            var preExistingOverlaps = []; // 存储所有的 C
-            
+            // --- 步骤 A: 找出所有重叠 C (A n B) ---
+            var preExistingOverlaps = [];
             for (let i = 0; i < existingFeatures.length; i++) {
                 for (let j = i + 1; j < existingFeatures.length; j++) {
-                    var polyA = existingFeatures[i];
-                    var polyB = existingFeatures[j];
-                    
-                    // 计算 A 和 B 的交集
-                    var intersectionAB = turf.intersect(polyA, polyB);
-                    if (intersectionAB) {
-                        preExistingOverlaps.push(intersectionAB);
-                    }
+                    var intersect = turf.intersect(existingFeatures[i], existingFeatures[j]);
+                    if (intersect) preExistingOverlaps.push(intersect);
                 }
             }
-
-            // 合并所有的 C 成为一个大的 MultiPolygon (Existing_Overlap_Zone)
             var unionC = null;
             if (preExistingOverlaps.length > 0) {
                 unionC = preExistingOverlaps[0];
-                for (let k = 1; k < preExistingOverlaps.length; k++) {
-                    unionC = turf.union(unionC, preExistingOverlaps[k]);
-                }
+                for (let k = 1; k < preExistingOverlaps.length; k++) unionC = turf.union(unionC, preExistingOverlaps[k]);
             }
 
-            // --- 步骤 B: 计算 X 与 C 的交集 (淡红色区域) ---
+            // --- 步骤 B: 计算 X 与 C 的交集 (淡红) ---
             var intersectionXC = null;
             if (unionC) {
                 intersectionXC = turf.intersect(featureX, unionC);
                 if (intersectionXC) {
-                    renderHighlight(intersectionXC, "#FFC0CB", 0.6); // 淡红色
+                    // 暂存淡红区域
+                    cacheTempResult(intersectionXC, "#FFC0CB", 0.6, "Intersection_XC");
                 }
             }
 
-            // --- 步骤 C: 计算 X 与 其他部分的交集 (紫色区域) ---
-            // 1. 计算 X 与 所有现有板块的并集 U 的交集 -> Total_Intersection
-            var unionAllExisting = existingFeatures[0];
-            for (let i = 1; i < existingFeatures.length; i++) {
-                unionAllExisting = turf.union(unionAllExisting, existingFeatures[i]);
-            }
+            // --- 步骤 C: 计算 X 与 (A U B) 的交集 (紫色) ---
+            var unionAll = existingFeatures[0];
+            for (let i = 1; i < existingFeatures.length; i++) unionAll = turf.union(unionAll, existingFeatures[i]);
             
-            var intersectionTotal = turf.intersect(featureX, unionAllExisting);
-            
-            // 2. 从 Total 中 挖掉 XC，剩下的就是紫色区域
-            var intersectionPurple = intersectionTotal;
-            if (intersectionPurple && intersectionXC) {
-                intersectionPurple = turf.difference(intersectionPurple, intersectionXC);
+            var intersectTotal = turf.intersect(featureX, unionAll);
+            var intersectPurple = intersectTotal;
+            if (intersectPurple && intersectionXC) {
+                intersectPurple = turf.difference(intersectPurple, intersectionXC);
+            }
+            if (intersectPurple) {
+                // 暂存紫色区域
+                cacheTempResult(intersectPurple, "#800080", 0.4, "Intersection_Purple");
             }
 
-            if (intersectionPurple) {
-                renderHighlight(intersectionPurple, "#800080", 0.4); // 紫色
+            // --- 步骤 D: 绘制边线 (橙色) ---
+            if (intersectTotal) {
+                var lines = turf.polygonToLine(intersectTotal);
+                // 线条比较特殊，我们暂存为 LineString 类型
+                cacheTempResult(lines, "#FFA500", 1.0, "Boundary_Line", true);
             }
 
-            // --- 步骤 D: 绘制重叠边线 (橙色) ---
-            // 我们提取 intersectionTotal 的边界
-            if (intersectionTotal) {
-                var lines = turf.polygonToLine(intersectionTotal);
-                renderLines(lines, "#FFA500", 4); // 橙色粗线
-            }
-
-            // --- 步骤 E: 绘制 X 自身的剩余部分 (作为重构结果 E) ---
-            // E = X - Total_Intersection
-            var resultE = turf.difference(featureX, unionAllExisting);
+            // --- 步骤 E: X 的剩余部分 (黄色) ---
+            var resultE = turf.difference(featureX, unionAll);
             if (resultE) {
-                // 这是最终重构产生的新区域，用我们标准的黄色高亮
-                renderHighlight(resultE, "yellow", 0.2);
+                // 暂存新生成区域
+                cacheTempResult(resultE, "yellow", 0.3, "New_Area_E");
             }
+
+            // ==========================================
+            // 【关键点】 弹出保存提示
+            // 使用 setTimeout 让浏览器先完成渲染，再弹窗
+            // ==========================================
+            setTimeout(function() {
+                var isSave = confirm("分析完成！\n是否保存屏幕上的【紫色/淡红/黄色】区域到存档？\n\n点击【确定】保存并持久化。\n点击【取消】丢弃此次分析。");
+                
+                if (isSave) {
+                    saveAnalysisToPermanent(); // 用户点是 -> 转正
+                } else {
+                    clearAnalysis(); // 用户点否 -> 清除
+                }
+            }, 100);
 
         } catch (e) {
             console.error(e);
-            alert("分析计算过载或几何错误，请尝试画得简单一点。");
+            alert("分析计算错误，请重试。");
         }
     }
 
     // ============================================
-    // 5. 辅助渲染函数
+    // 5. 辅助功能：缓存、保存与渲染
     // ============================================
-    
-    // 渲染高亮面
-    function renderHighlight(geoJson, color, opacity) {
-        // 处理 MultiPolygon
+
+    // 缓存临时结果 (同时渲染到屏幕以便预览)
+    function cacheTempResult(geoJson, color, opacity, typeName, isLine = false) {
+        // 1. 渲染视觉效果 (临时 Overlay)
+        var overlays = [];
+        
+        // 处理 MultiPolygon / FeatureCollection
         var geoms = [];
-        if (geoJson.geometry.type === 'MultiPolygon') {
-            geoJson.geometry.coordinates.forEach(coords => geoms.push(coords[0]));
+        if (geoJson.type === 'FeatureCollection') {
+            geoJson.features.forEach(f => geoms.push(f.geometry.coordinates));
+        } else if (geoJson.geometry.type === 'MultiPolygon') {
+            geoJson.geometry.coordinates.forEach(c => geoms.push(c[0]));
+        } else if (geoJson.geometry.type === 'MultiLineString') {
+            geoms = geoJson.geometry.coordinates; // 线数组
         } else {
-            geoms.push(geoJson.geometry.coordinates[0]);
+            geoms.push(geoJson.geometry.coordinates[0] || geoJson.geometry.coordinates);
         }
 
-        geoms.forEach(loop => {
-            var path = loop.map(p => new BMapGL.Point(p[0], p[1]));
-            var overlay = new BMapGL.Polygon(path, {
-                strokeColor: color, strokeWeight: 1, strokeOpacity: 1,
-                fillColor: color, fillOpacity: opacity
-            });
-            map.addOverlay(overlay);
-            appState.analysisOverlays.push(overlay);
+        geoms.forEach(coords => {
+            var path = coords.map(p => new BMapGL.Point(p[0], p[1]));
+            var ov;
+            if (isLine) {
+                ov = new BMapGL.Polyline(path, { strokeColor: color, strokeWeight: 4, strokeOpacity: opacity });
+            } else {
+                ov = new BMapGL.Polygon(path, { strokeColor: color, strokeWeight: 1, fillColor: color, fillOpacity: opacity });
+            }
+            map.addOverlay(ov);
+            appState.analysisOverlays.push(ov); // 记入临时列表
+            overlays.push(ov);
+        });
+
+        // 2. 存入数据缓存 (为了按下“确定”后能保存)
+        appState.tempResultData.push({
+            geoJson: geoJson,
+            color: color,
+            opacity: opacity,
+            type: typeName,
+            isLine: isLine
         });
     }
 
-    // 渲染高亮线
-    function renderLines(geoJsonLine, color, weight) {
-        var geoms = [];
-        // 处理 MultiLineString 或 FeatureCollection
-        if (geoJsonLine.type === 'FeatureCollection') {
-            geoJsonLine.features.forEach(f => geoms.push(f.geometry.coordinates));
-        } else if (geoJsonLine.geometry.type === 'MultiLineString') {
-            geoms = geoJsonLine.geometry.coordinates;
-        } else {
-            geoms.push(geoJsonLine.geometry.coordinates);
-        }
+    // 【核心】将临时分析结果“转正”为永久数据
+    function saveAnalysisToPermanent() {
+        appState.tempResultData.forEach(item => {
+            // 给 GeoJSON 赋予属性，确保它在下次加载时能保持颜色
+            item.geoJson.properties = {
+                id: 'saved_' + (ID_COUNTER++),
+                name: item.type,
+                savedColor: item.color,     // 记录颜色
+                savedOpacity: item.opacity, // 记录透明度
+                isLine: item.isLine         // 记录是否为线
+            };
 
-        geoms.forEach(lineCoords => {
-            var path = lineCoords.map(p => new BMapGL.Point(p[0], p[1]));
-            var overlay = new BMapGL.Polyline(path, {
-                strokeColor: color, strokeWeight: weight, strokeOpacity: 1
-            });
+            // 如果是线，我们可能不存入 polygons 数组(通常 polygons 只存面)，
+            // 但为了演示，我们混存。实际项目中建议分开存。
+            // 这里我们重新生成一个永久 Overlay
+            
+            // 为了简化，我们直接把刚才画在屏幕上的 Overlay “过继”给 appState.polygons
+            // 但因为 analysisOverlays 里的 overlay 引用比较乱，我们重新生成一遍最稳妥
+            addPermanentFromData(item);
+        });
+
+        // 清空临时引用，防止被 setMode 清除
+        appState.analysisOverlays = []; 
+        appState.tempResultData = [];
+        
+        alert("保存成功！即切换模式这些色块也会保留。");
+    }
+
+    // 根据数据生成永久 Overlay
+    function addPermanentFromData(dataItem) {
+        var geo = dataItem.geoJson;
+        var style = {
+            strokeColor: dataItem.color,
+            strokeWeight: dataItem.isLine ? 4 : 1,
+            strokeOpacity: dataItem.isLine ? dataItem.opacity : 1,
+            fillColor: dataItem.color,
+            fillOpacity: dataItem.opacity
+        };
+
+        // 处理几何体 (简化处理单 Feature)
+        var coordsList = [];
+        if (geo.geometry.type === 'MultiPolygon') coordsList = geo.geometry.coordinates.map(c => c[0]);
+        else if (geo.geometry.type === 'Polygon') coordsList = [geo.geometry.coordinates[0]];
+        else if (geo.geometry.type === 'LineString') coordsList = [geo.geometry.coordinates];
+        // ... 其他情况略
+
+        coordsList.forEach(coords => {
+            var path = coords.map(p => new BMapGL.Point(p[0], p[1]));
+            var overlay;
+            if (dataItem.isLine) {
+                overlay = new BMapGL.Polyline(path, style);
+            } else {
+                overlay = new BMapGL.Polygon(path, style);
+            }
+            
             map.addOverlay(overlay);
-            appState.analysisOverlays.push(overlay);
+            // 入库
+            appState.polygons.push({ overlay: overlay, geoJson: geo });
         });
     }
 
+    // 清理临时分析
     function clearAnalysis() {
         appState.analysisOverlays.forEach(o => map.removeOverlay(o));
         appState.analysisOverlays = [];
+        appState.tempResultData = [];
     }
 
+    // 清理绘图痕迹
     function clearTempDrawing() {
         appState.drawPath = [];
         if(appState.tempPolyline) map.removeOverlay(appState.tempPolyline);
         appState.tempPolyline = null;
     }
 
+    // 点转GeoJSON
     function ptsToGeoJSON(pts) {
         var coords = pts.map(p => [p.lng, p.lat]);
         return turf.polygon([coords]);
     }
 
+    // 普通编辑模式保存
     function finalizePolygon(geoJson) {
         geoJson.properties = { id: 'poly_' + (ID_COUNTER++), name: '板块' };
-        
-        var coords = geoJson.geometry.coordinates[0];
-        var path = coords.map(p => new BMapGL.Point(p[0], p[1]));
-        
-        var overlay = new BMapGL.Polygon(path, {
-            strokeColor: "blue", strokeWeight: 2, strokeOpacity: 0.5,
-            fillColor: "rgba(0,0,0,0.4)"
+        // 默认蓝色样式
+        var dataItem = {
+            geoJson: geoJson,
+            color: 'blue', opacity: 0.5, isLine: false
+        };
+        addPermanentFromData(dataItem);
+    }
+    
+    // 导出 (UE5调用)
+    window.exportData = function() {
+        // 只导出 GeoJSON，颜色信息已保存在 properties 中
+        var data = appState.polygons.map(p => p.geoJson);
+        document.title = "UE_SAVE:" + JSON.stringify(data);
+    };
+
+    // 导入 (UE5调用)
+    window.importData = function(jsonStr) {
+        map.clearOverlays();
+        appState.polygons = [];
+        var list = JSON.parse(jsonStr);
+        list.forEach(geo => {
+            // 恢复时读取保存的颜色属性
+            var props = geo.properties || {};
+            var item = {
+                geoJson: geo,
+                color: props.savedColor || 'blue',
+                opacity: props.savedOpacity || 0.5,
+                isLine: props.isLine || false
+            };
+            addPermanentFromData(item);
         });
-        
-        map.addOverlay(overlay);
-        appState.polygons.push({ overlay: overlay, geoJson: geoJson });
+    };
     }
 </script>
 
