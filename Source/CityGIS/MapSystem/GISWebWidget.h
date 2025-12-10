@@ -22,13 +22,22 @@ public:
 	virtual void NativeConstruct() override;
 
 	// --- 核心功能接口 (供蓝图调用) ---
-	UFUNCTION(BlueprintCallable) void SetMode(FString ModeName); // "browse", "edit", "snap"
-	UFUNCTION(BlueprintCallable) void SaveMap();
-	UFUNCTION(BlueprintCallable) void LoadMap();
-	UFUNCTION(BlueprintCallable) void UndoAction();
-	UFUNCTION(BlueprintCallable) void SearchByName(FString Name);
+	UFUNCTION(BlueprintCallable)
+	void SetMode(FString ModeName); // "browse", "edit", "snap"
+	UFUNCTION(BlueprintCallable)
+	void SaveMap();
+	UFUNCTION(BlueprintCallable)
+	void LoadMap();
+	UFUNCTION(BlueprintCallable)
+	void UndoAction();
+	UFUNCTION(BlueprintCallable)
+	void SearchByName(FString Name);
+
+	UFUNCTION(BlueprintCallable)
+	void ActivateReconstructionTool();
 
 private:
-	UFUNCTION() void OnTitleChanged(const FText& TitleText); // 监听 JS 发来的数据
+	UFUNCTION()
+	void OnTitleChanged(const FText& TitleText); // 监听 JS 发来的数据
 	FString SaveFilePath;
 };
