@@ -3,6 +3,388 @@
 <head>
     <meta charset="utf-8">
     <style>
+        /* ================= 1. 基础样式 ================= */
+        html, body, #map_container { width: 100%; height: 100%; overflow: hidden; margin: 0; font-family: "微软雅黑"; }
+        .anchorBL, .BMap_cpyCtrl { display: none; } /* 隐藏百度版权 */
+
+        /* ================= 2. 自定义保存弹窗 (屏幕正下方) ================= */
+        #save_modal {
+            display: none; 
+            position: fixed; 
+            left: 50%; bottom: 80px; transform: translateX(-50%);
+            z-index: 9999;
+            background: rgba(255, 255, 255, 0.95); 
+            backdrop-filter: blur(10px);
+            width: 260px; padding: 20px;
+            border-radius: 12px; 
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+            border: 1px solid #eee;
+            animation: popUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        }
+
+        @keyframes popUp { from { bottom: -200px; opacity: 0; } to { bottom: 80px; opacity: 1; } }
+
+        #save_modal h4 { margin: 0 0 15px 0; font-size: 16px; color: #333; text-align: center; }
+        #save_modal select { width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 6px; outline: none; }
+        #save_modal input { width: 92%; padding: 8px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 6px; outline: none; }
+
+        .btn-group { display: flex; justify-content: space-between; gap: 10px; }
+        .btn-group button { flex: 1; padding: 8px; cursor: pointer; border: none; border-radius: 6px; color: white; font-weight: bold; }
+        #btn_confirm { background-color: #007bff; } 
+        #btn_confirm:hover { background-color: #0056b3; }
+        #btn_cancel { background-color: #6c757d; } 
+        #btn_cancel:hover { background-color: #5a6268; }
+    </style>
+    
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
+    <script src="turf.min.js"></script>
+</head>
+<body>
+    <div id="map_container"></div>
+
+    <div id="save_modal">
+        <h4 id="modal_title">分析完成</h4>
+        <select id="color_selector">
+            <option value="yellow" selected>🟡 仅保留黄色 (新拓展区)</option>
+            <option value="purple">🟣 仅保留紫色 (单侧覆盖)</option>
+            <option value="pink">🌸 仅保留淡红 (重叠核心)</option>
+            <option value="all">💠 保留所有区域</option>
+        </select>
+        <input type="text" id="poly_name_input" placeholder="请输入区域名称" value="我的区域">
+        <div class="btn-group">
+            <button id="btn_cancel" onclick="closeModal()">丢弃</button>
+            <button id="btn_confirm" onclick="confirmSave()">保存</button>
+        </div>
+    </div>
+</body>
+</html>
+<script>
+    // ================= 1. 全局配置与状态 =================
+    // 捕获所有JS错误并打印到控制台，供UE5 OutputLog查看
+    window.onerror = function(msg, url, line) { console.log("UE_ERROR:JS_Error:" + msg + " Line:" + line); };
+
+    var map = new BMapGL.Map("map_container");
+    map.centerAndZoom(new BMapGL.Point(116.404, 39.915), 17);
+    map.enableScrollWheelZoom(true);
+    map.setTilt(60);
+
+    var appState = {
+        mode: 'browse', 
+        polygons: [],   // 永久数据
+        
+        // 绘图相关
+        drawPath: [], 
+        isDrawing: false, 
+        tempPolyline: null,
+        
+        // 吸附相关
+        canSnapClose: false,
+        snapHintCircle: null,
+        
+        // 分析相关
+        analysisOverlays: [], 
+        tempResultData: [] 
+    };
+    var ID_COUNTER = 1;
+
+    // ================= 2. 交互逻辑 (C++ 调用) =================
+    window.setMode = function(mode) {
+        appState.mode = mode;
+        closeModal(); clearAnalysis(); clearTemp();
+        if(mode === 'browse') map.enableDragging();
+        else map.disableDragging();
+    };
+
+    // ================= 3. 手绘逻辑 (含智能吸附) =================
+    map.addEventListener('mousedown', function(e) {
+        if(appState.mode === 'browse') return;
+        if(e.target.closest('#save_modal')) return;
+        
+        appState.isDrawing = true;
+        appState.drawPath = [e.latlng];
+        appState.canSnapClose = false;
+    });
+
+    map.addEventListener('mousemove', function(e) {
+        if(!appState.isDrawing || appState.mode === 'browse') return;
+        
+        var currentPt = e.latlng;
+        appState.drawPath.push(currentPt);
+        
+        // 实时画线
+        if(appState.tempPolyline) map.removeOverlay(appState.tempPolyline);
+        appState.tempPolyline = new BMapGL.Polyline(appState.drawPath.map(p=>new BMapGL.Point(p.lng, p.lat)), {strokeColor:"blue", strokeWeight:2});
+        map.addOverlay(appState.tempPolyline);
+
+        // 检测吸附
+        checkSnapProximity(currentPt);
+    });
+
+    map.addEventListener('mouseup', function(e) {
+        if(!appState.isDrawing || appState.mode === 'browse') return;
+        appState.isDrawing = false;
+        
+        if(appState.drawPath.length < 3) { clearTemp(); return; }
+
+        // --- 吸附判定 ---
+        if (appState.canSnapClose) {
+            // 如果吸附激活，强制闭合到起点
+            appState.drawPath.push(appState.drawPath[0]);
+        } else {
+            // 正常闭合
+            appState.drawPath.push(appState.drawPath[0]);
+        }
+
+        // 构建几何体并平滑
+        var coords = appState.drawPath.map(p => [p.lng, p.lat]);
+        var rawGeo = turf.polygon([coords]);
+        var simpleGeo = turf.simplify(rawGeo, {tolerance: 0.00001, highQuality: false});
+
+        // 模式分发
+        if (appState.mode === 'edit') {
+            prepareSingleSave(simpleGeo);
+        } 
+        else if (appState.mode === 'reconstruct') {
+            executeAnalysis(simpleGeo);
+        }
+        
+        clearTemp();
+    });
+
+    // 吸附检测函数
+    function checkSnapProximity(currentPt) {
+        if (appState.drawPath.length < 10) return; // 画了一段才检测
+
+        var startPt = appState.drawPath[0];
+        var pixStart = map.pointToPixel(new BMapGL.Point(startPt.lng, startPt.lat));
+        var pixCurrent = map.pointToPixel(new BMapGL.Point(currentPt.lng, currentPt.lat));
+        var dist = Math.sqrt(Math.pow(pixStart.x - pixCurrent.x, 2) + Math.pow(pixStart.y - pixCurrent.y, 2));
+
+        // 阈值 20px
+        if (dist < 20) {
+            appState.canSnapClose = true;
+            if (!appState.snapHintCircle) {
+                appState.snapHintCircle = new BMapGL.Circle(new BMapGL.Point(startPt.lng, startPt.lat), 5, {
+                    strokeColor: "white", strokeWeight: 2, fillColor: "#FFD700", fillOpacity: 0.9
+                });
+                map.addOverlay(appState.snapHintCircle);
+            }
+        } else {
+            appState.canSnapClose = false;
+            if (appState.snapHintCircle) {
+                map.removeOverlay(appState.snapHintCircle);
+                appState.snapHintCircle = null;
+            }
+        }
+    }
+
+    // ================= 4. 核心分析算法 =================
+    function executeAnalysis(polyX) {
+        clearAnalysis(); appState.tempResultData = [];
+        if(appState.polygons.length === 0) { prepareSingleSave(polyX); return; }
+
+        try {
+            var featX = turf.feature(polyX.geometry);
+            var existFeats = appState.polygons.map(p => turf.feature(p.geoJson.geometry));
+
+            // A. Union C
+            var unionC = null;
+            for(let i=0; i<existFeats.length; i++) {
+                for(let j=i+1; j<existFeats.length; j++) {
+                    var inter = turf.intersect(existFeats[i], existFeats[j]);
+                    if(inter) unionC = unionC ? turf.union(unionC, inter) : inter;
+                }
+            }
+            // B. X n C (Pink)
+            var interXC = unionC ? turf.intersect(featX, unionC) : null;
+            if(interXC) cacheResult(interXC, "#FFC0CB", 0.6, "重叠核心", false, 'pink');
+
+            // C. X n All - C (Purple)
+            var unionAll = existFeats[0];
+            for(let i=1; i<existFeats.length; i++) unionAll = turf.union(unionAll, existFeats[i]);
+            var interTotal = turf.intersect(featX, unionAll);
+            var interPurple = (interTotal && interXC) ? turf.difference(interTotal, interXC) : interTotal;
+            if(interPurple) cacheResult(interPurple, "#800080", 0.4, "单侧覆盖", false, 'purple');
+
+            // D. Lines (Orange)
+            if(interTotal) {
+                var lines = turf.polygonToLine(interTotal);
+                cacheResult(lines, "#FFA500", 1.0, "交界线", true, 'orange');
+            }
+
+            // E. X - All (Yellow)
+            var resE = turf.difference(featX, unionAll);
+            if(resE) cacheResult(resE, "yellow", 0.3, "新拓展区", false, 'yellow');
+
+            showModal(true); 
+
+        } catch(e) { console.log("UE_ERROR:" + e.message); alert("分析错误"); }
+    }
+
+    // ================= 5. 弹窗与保存逻辑 =================
+    function prepareSingleSave(geoJson) {
+        appState.tempResultData = [{
+            geoJson: geoJson, color: 'blue', opacity: 0.5, rawType: 'single', isLine: false
+        }];
+        cacheResult(geoJson, 'blue', 0.5, 'Temp', false, 'single');
+        showModal(false);
+    }
+
+    function showModal(isMulti) {
+        var modal = document.getElementById('save_modal');
+        var sel = document.getElementById('color_selector');
+        var title = document.getElementById('modal_title');
+        
+        if(isMulti) { sel.style.display = 'block'; sel.value = 'yellow'; title.innerText = "重构分析完成"; } 
+        else { sel.style.display = 'none'; title.innerText = "绘制完成"; }
+        
+        modal.style.display = 'block';
+        setTimeout(() => document.getElementById('poly_name_input').focus(), 50);
+    }
+
+    function closeModal() {
+        document.getElementById('save_modal').style.display = 'none';
+        clearAnalysis();
+    }
+
+    window.confirmSave = function() {
+        var nameInput = document.getElementById('poly_name_input').value || "未命名";
+        var sel = document.getElementById('color_selector');
+        var choice = (sel.style.display === 'none') ? 'single' : sel.value;
+
+        var toSave = [];
+        if(choice === 'all' || choice === 'single') toSave = appState.tempResultData;
+        else toSave = appState.tempResultData.filter(i => i.rawType === choice);
+
+        if(toSave.length === 0) { alert("没有该颜色的区域！"); return; }
+        document.getElementById('save_modal').style.display = 'none';
+
+        // 延时队列发送，防止丢包
+        toSave.forEach((item, idx) => {
+            setTimeout(function() {
+                var finalName = (toSave.length > 1) ? (nameInput + "_" + item.rawType + "_" + (idx+1)) : nameInput;
+                addPermanent(item.geoJson, item.color, item.opacity, item.isLine, finalName);
+            }, idx * 300); 
+        });
+        appState.tempResultData = [];
+    };
+
+    // ================= 6. 辅助函数 =================
+    function cacheResult(geo, col, op, name, line, type) {
+        var geoms = flattenGeo(geo);
+        geoms.forEach(path => {
+            var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4}) 
+                          : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1});
+            map.addOverlay(ov);
+            appState.analysisOverlays.push(ov);
+        });
+        appState.tempResultData.push({geoJson:geo, color:col, opacity:op, rawType:type, isLine:line});
+    }
+
+    function addPermanent(geo, col, op, line, name) {
+        var id = 'poly_' + (ID_COUNTER++);
+        geo.properties = { id: id, name: name, svCol: col, svOp: op, svLine: line };
+        var geoms = flattenGeo(geo);
+        geoms.forEach(path => {
+            var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4, strokeOpacity:op}) 
+                          : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1});
+            ov.addEventListener('click', function(){ window.focusPoly(id); });
+            map.addOverlay(ov);
+            appState.polygons.push({overlay:ov, geoJson:geo});
+        });
+        
+        // 使用 console.log 通信 (匹配 OnConsoleMessage)
+        var randomTag = new Date().getTime(); 
+        console.log("UE_ADD:" + id + "|" + name + "|" + randomTag);
+    }
+
+    function flattenGeo(geo) {
+        var coords = [];
+        if(!geo || !geo.geometry) return [];
+        var type = geo.geometry.type;
+        if(type === 'MultiPolygon') coords = geo.geometry.coordinates.map(c=>c[0]);
+        else if(type === 'Polygon') coords = [geo.geometry.coordinates[0]];
+        else if(type === 'LineString') coords = [geo.geometry.coordinates];
+        else if(type === 'MultiLineString') coords = geo.geometry.coordinates;
+        var res = [];
+        coords.forEach(c => { if(c) res.push(c.map(p => new BMapGL.Point(p[0], p[1]))); });
+        return res;
+    }
+
+    function clearTemp() { 
+        appState.drawPath=[]; 
+        if(appState.tempPolyline) map.removeOverlay(appState.tempPolyline); 
+        if(appState.snapHintCircle) { map.removeOverlay(appState.snapHintCircle); appState.snapHintCircle = null; }
+        appState.canSnapClose = false;
+    }
+
+    function clearAnalysis() { appState.analysisOverlays.forEach(o=>map.removeOverlay(o)); appState.analysisOverlays=[]; appState.tempResultData=[]; }
+
+    // ================= 7. IO 接口 =================
+    window.exportMap = function(fname) {
+        var data = appState.polygons.map(p => p.geoJson);
+        console.log("UE_SAVE:" + fname + "|" + JSON.stringify(data));
+    };
+    window.importMap = function(json) {
+        map.clearOverlays(); appState.polygons=[];
+        var list = JSON.parse(json);
+        list.forEach((g, i) => {
+            var p = g.properties;
+            setTimeout(() => addPermanent(g, p.svCol, p.svOp, p.svLine, p.name), i * 50);
+        });
+    };
+    
+    // 聚焦功能 (支持 MultiPolygon)
+    window.focusPoly = function(id) {
+        var targets = appState.polygons.filter(p => p.geoJson.properties.id === id);
+        if(targets.length > 0) {
+            var b = new BMapGL.Bounds();
+            targets.forEach(t => {
+                var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay];
+                ovs.forEach(o => {
+                    var path = o.getPath(); path.forEach(pt=>b.extend(pt));
+                    var oldColor = o.getStrokeColor();
+                    o.setStrokeColor("red"); o.setStrokeWeight(4);
+                    setTimeout(() => { o.setStrokeColor(oldColor); o.setStrokeWeight(1); }, 800);
+                });
+            });
+            map.setViewport(b);
+        } else {
+            console.log("UE_ERROR: JS focusPoly not found: " + id);
+        }
+    };
+    
+    // 删除功能 (支持 MultiPolygon)
+    window.deletePoly = function(id) {
+        var targets = appState.polygons.filter(p => p.geoJson.properties.id === id);
+        if(targets.length > 0) {
+            targets.forEach(t => {
+                var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay];
+                ovs.forEach(o => map.removeOverlay(o));
+            });
+            appState.polygons = appState.polygons.filter(p => p.geoJson.properties.id !== id);
+            console.log("UE_LOG: Deleted poly " + id);
+        } else {
+            console.log("UE_ERROR: JS deletePoly not found: " + id);
+        }
+    };
+</script>
+
+
+
+
+
+
+
+
+
+
+<!--
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <style>
         /* ================= 样式定义 ================= */
         html, body, #map_container { width: 100%; height: 100%; overflow: hidden; margin: 0; font-family: "微软雅黑"; }
         .anchorBL, .BMap_cpyCtrl { display: none; } /* 隐藏百度版权 */
@@ -354,6 +736,7 @@
         }
     };
 </script>
+-->
 
 
 
