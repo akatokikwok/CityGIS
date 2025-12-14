@@ -48,11 +48,12 @@
             </select>
         </div>
 
-        <span class="input-label">归属类型:</span>
+        <span class="input-label">归属层级:</span>
         <select id="type_selector">
-            <option value="Normal">普通区块</option>
-            <option value="Reconstruct">重构切割区块</option>
-            <option value="Custom">定制区块</option>
+            <option value="District">1级 - 区镇 (District)</option>
+            <option value="Street">2级 - 街道 (Street)</option>
+            <option value="Community">3级 - 小区/建筑 (Community)</option>
+            <option value="Reconstruct">⚡ 重构图块 (Reconstruct)</option>
         </select>
 
         <span class="input-label">区域名称:</span>
@@ -170,6 +171,8 @@
             map.addOverlay(ov);
             appState.analysisOverlays.push(ov);
         });
+        // 确保 type 不为空，防止筛选bug
+        if(!type) type = "Reconstruct"; 
         appState.tempResultData.push({geoJson:geo, color:col, opacity:op, rawType:type, isLine:line});
     }
 
@@ -191,7 +194,10 @@
             colorBox.style.display = 'none'; 
         }
         document.getElementById('poly_name_input').value = "我的区域" + DEFAULT_NAME_IDX;
-        document.getElementById('type_selector').value = 'Normal';
+        
+        // 默认类型
+        document.getElementById('type_selector').value = 'District'; // 默认为区镇
+        
         modal.style.display = 'block';
     }
 
@@ -204,7 +210,9 @@
         if(appState.isSaving) return;
         var nameInput = document.getElementById('poly_name_input').value || "未命名";
         if(nameInput === "我的区域" + DEFAULT_NAME_IDX) { DEFAULT_NAME_IDX++; }
+        
         var selectedType = document.getElementById('type_selector').value; 
+        
         var colorSel = document.getElementById('color_selector');
         var choice = (document.getElementById('color_filter_box').style.display === 'none') ? 'single' : colorSel.value;
 
@@ -216,6 +224,11 @@
 
         document.getElementById('save_modal').style.display = 'none';
         appState.isSaving = true;
+        
+        // 如果是单选模式，强制使用下拉框的类型
+        // 如果是多选模式(reconstruct)，且用户选的是颜色筛选，我们要把这个“重构”属性传下去吗？
+        // 需求说：重构图块单独一列。所以如果是在重构模式下，我们强制覆盖 Type 为 Reconstruct，
+        // 或者用户手动选 Reconstruct。为了方便，我们优先信任下拉框。
         processSaveQueue(toSave, nameInput, selectedType, 0);
     };
 
@@ -249,40 +262,24 @@
         console.log("UE_ADD:" + id + "|" + name + "|" + typeStr + "|" + randomTag);
     }
 
-    // ================= 5. 交互接口 (Focus修复版) =================
-
-    // 【核心修复】平滑飞行 + 避让 UI
+    // ================= 5. 交互接口 =================
     window.focusPoly = function(id) {
         var targets = appState.polygons.filter(p => p.geoJson.properties.id === id);
         if(targets.length > 0) {
-            // 1. 收集所有点，计算边界
             var allPoints = [];
             targets.forEach(t => {
                 var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay];
                 ovs.forEach(o => {
-                    var path = o.getPath();
-                    if(path) allPoints = allPoints.concat(path);
-                    
-                    // 高亮特效
+                    var path = o.getPath(); if(path) allPoints = allPoints.concat(path);
                     var oldColor = o.getStrokeColor();
                     o.setStrokeColor("red"); o.setStrokeWeight(4);
                     setTimeout(() => { o.setStrokeColor(oldColor); o.setStrokeWeight(1); }, 1000);
                 });
             });
-
-            // 2. 使用 setViewport 实现平滑跳转
             if(allPoints.length > 0) {
-                map.setViewport(allPoints, {
-                    // [上, 右, 下, 左]
-                    // 左侧留出 300px 给你的 UI 列表，防止遮挡
-                    margins: [60, 60, 60, 300], 
-                    enableAnimation: true, // 【关键】开启平滑动画
-                    zoomFactor: 0
-                });
+                map.setViewport(allPoints, { margins: [60, 60, 60, 300], enableAnimation: true, zoomFactor: 0 });
             }
-        } else {
-            console.log("UE_ERROR: Not found " + id);
-        }
+        } else { console.log("UE_ERROR: Not found " + id); }
     };
 
     window.filterPolys = function(filterType) {
