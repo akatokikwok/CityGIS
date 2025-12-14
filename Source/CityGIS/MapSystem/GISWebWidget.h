@@ -5,12 +5,16 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/ComboBoxString.h"
+#include "Components/EditableText.h"
+#include "Components/ScrollBox.h"
 #include "GISWebWidget.generated.h"
 
+class UGISPolyItem;
 class UWebBrowser;
 
-// 【修改】增加 Type 参数
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnAddPolyItem, FString, ID, FString, Name, FString, Type);
+// 【修改】增加 ParentID 参数 (共4个参数)
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnAddPolyItem, FString, ID, FString, Name, FString, Type, FString, ParentID);
 
 UCLASS()
 class CITYGIS_API UGISWebWidget : public UUserWidget
@@ -22,8 +26,22 @@ protected:
 	FOnAddPolyItem OnAddPolyItemDelegate;
 
 	// 绑定蓝图里的 Web Browser 组件，名字必须叫 MapBrowser
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
 	UWebBrowser* MapBrowser = nullptr;
+
+	// 两个列表容器
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UScrollBox* List_Admin;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UScrollBox* List_Reconstruct;
+
+	// UI 控件
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UEditableText* Input_SaveName;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UComboBoxString* Combo_Files;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UComboBoxString* Combo_Filter;
+
+	// --- 资源引用 ---
+	// 在蓝图 Class Defaults 里设置这个，指向 WBP_PolyItem
+	UPROPERTY(EditAnywhere, Category = "Config")
+	TSubclassOf<UGISPolyItem> PolyItemClass;
 	
 public:
 	virtual void NativeConstruct() override;
@@ -69,6 +87,12 @@ private:
 	UFUNCTION()
 	void HandleConsoleMessage(const FString& Message, const FString& Source, int32 Line);
 
+	// 核心：处理新条目创建和层级挂载
+	void ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID);
+
+	// 字典：快速查找父级 Widget
+	TMap<FString, UGISPolyItem*> WidgetMap;
+	
 	FString SaveFilePath;
 
 	FString LastProcessedID; 

@@ -1,4 +1,6 @@
 ﻿#include "GISWebWidget.h"
+
+#include "GISPolyItem.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "WebBrowserWidget/Public/WebBrowser.h"
@@ -53,8 +55,10 @@ void UGISWebWidget::UndoAction()
 void UGISWebWidget::SaveMapAs(FString FileName)
 {
 	if (!FileName.EndsWith(".json")) FileName += ".json";
-	// 让 JS 导出数据，带上文件名
-	MapBrowser->ExecuteJavascript(FString::Printf(TEXT("exportMap('%s');"), *FileName));
+	if (MapBrowser)
+	{
+		MapBrowser->ExecuteJavascript(FString::Printf(TEXT("exportMap('%s');"), *FileName));
+	}
 }
 
 void UGISWebWidget::OnTitleChanged(const FText& TitleText)
@@ -73,12 +77,12 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 	// (因为我们的 JS 队列是间隔 0.3 秒发送的，所以合法消息不会被误杀)
 	double CurrentTime = FPlatformTime::Seconds();
 	const double& DeltaMinus = CurrentTime - LastLogTime;
-	if (DeltaMinus < 0.01) 
+	if (DeltaMinus < 0.01)
 	{
-		return; 
+		return;
 	}
 	LastLogTime = CurrentTime;
-	
+
 	// 打印一下，确保我们收到了
 	UE_LOG(LogTemp, Log, TEXT("GIS Received JS Message: %s"), *Message);
 
@@ -98,40 +102,98 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 	else if (Message.StartsWith("UE_ADD:"))
 	{
 		FString Content = Message.RightChop(7);
-		FString ID, Name, Type; 
-        
+		FString ID, Name, Type, ParentID;
+
 		// 格式: ID|Name|Type|Timestamp
 		// 我们需要拆解前三个
 		TArray<FString> Parts;
 		Content.ParseIntoArray(Parts, TEXT("|"), false);
 
-		if (Parts.Num() >= 3)
+		if (Parts.Num() >= 4) // 至少要有4个部分
 		{
 			ID = Parts[0];
 			Name = Parts[1];
 			Type = Parts[2]; // 获取类型
+			ParentID = Parts[3]; // 获取 ParentID-UI层级树
 
 			// ID 查重 (保持不变)
 			if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase)) return;
 			LastProcessedID = ID;
 
+			// 调用 C++ 内部函数构建 UI
+			ProcessAddPolyItem(ID, Name, Type, ParentID);
+
 			if (OnAddPolyItemDelegate.IsBound())
 			{
 				// 广播三个参数
-				OnAddPolyItemDelegate.Broadcast(ID, Name, Type);
+				OnAddPolyItemDelegate.Broadcast(ID, Name, Type, ParentID);
 			}
+		}
+	}
+}
+
+// 核心：C++ 构建树状 UI
+void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID)
+{
+	if (!PolyItemClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("GIS: PolyItemClass not set in BP_GISMain!"));
+		return;
+	}
+
+	// 1. 创建 Widget
+	UGISPolyItem* NewItem = CreateWidget<UGISPolyItem>(this, PolyItemClass);
+	if (!NewItem) return;
+
+	// 2. 初始化数据
+	NewItem->SetupItem(ID, Name, Type, this);
+
+	// 3. 存入字典
+	WidgetMap.Add(ID, NewItem);
+
+	// 4. 挂载到 UI
+	if (Type == "Reconstruct")
+	{
+		// 重构块 -> 单独列表
+		if (List_Reconstruct) List_Reconstruct->AddChild(NewItem);
+	}
+	else if (Type == "District")
+	{
+		// 区镇 -> 顶级列表
+		if (List_Admin) List_Admin->AddChild(NewItem);
+	}
+	else if (Type == "Street" || Type == "Community")
+	{
+		// 街道/小区 -> 找爸爸
+		UGISPolyItem** ParentWidgetPtr = WidgetMap.Find(ParentID);
+		if (ParentWidgetPtr && *ParentWidgetPtr)
+		{
+			// 找到了爸爸，加到爸爸怀里 (Child_Container)
+			(*ParentWidgetPtr)->AddChildItem(NewItem);
+		}
+		else
+		{
+			// 没找到爸爸 (可能是孤儿数据)，做容错处理，加到最外层
+			UE_LOG(LogTemp, Warning, TEXT("GIS: Orphan Item %s (Parent %s not found)"), *Name, *ParentID);
+			if (List_Admin) List_Admin->AddChild(NewItem);
 		}
 	}
 }
 
 void UGISWebWidget::LoadMap(FString FileName)
 {
+	// 载入前清空 UI 和 字典
+	if (List_Admin) List_Admin->ClearChildren();
+	if (List_Reconstruct) List_Reconstruct->ClearChildren();
+	WidgetMap.Empty();
+	LastProcessedID = "";
+
 	FString Path = FPaths::ProjectSavedDir() + TEXT("GISData/") + FileName;
 	FString Json;
 	if (FFileHelper::LoadFileToString(Json, *Path))
 	{
 		Json = Json.Replace(TEXT("\n"), TEXT("")).Replace(TEXT("\r"), TEXT(""));
-		MapBrowser->ExecuteJavascript(FString::Printf(TEXT("importMap('%s');"), *Json));
+		if (MapBrowser) MapBrowser->ExecuteJavascript(FString::Printf(TEXT("importMap('%s');"), *Json));
 	}
 }
 
@@ -149,7 +211,13 @@ void UGISWebWidget::FocusID(FString ID)
 
 void UGISWebWidget::DeleteID(FString ID)
 {
-	MapBrowser->ExecuteJavascript(FString::Printf(TEXT("deletePoly('%s');"), *ID));
+	if (MapBrowser) MapBrowser->ExecuteJavascript(FString::Printf(TEXT("deletePoly('%s');"), *ID));
+	// C++ 侧同时也清理字典和UI
+	if (UGISPolyItem** Item = WidgetMap.Find(ID))
+	{
+		if (*Item) (*Item)->RemoveFromParent();
+		WidgetMap.Remove(ID);
+	}
 }
 
 void UGISWebWidget::SearchByName(FString Name)
