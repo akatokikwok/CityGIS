@@ -98,25 +98,27 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 	else if (Message.StartsWith("UE_ADD:"))
 	{
 		FString Content = Message.RightChop(7);
-		FString ID, Name;
+		FString ID, Name, Type; 
         
-		if (Content.Split("|", &ID, &Name))
-		{
-			// 【核心修复 3】ID 查重 (配合头文件变量)
-			if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase))
-			{
-				UE_LOG(LogTemp, Warning, TEXT("GIS: Blocked Duplicate ID: %s"), *ID);
-				return; // 拦截！
-			}
-			LastProcessedID = ID; // 更新记录
+		// 格式: ID|Name|Type|Timestamp
+		// 我们需要拆解前三个
+		TArray<FString> Parts;
+		Content.ParseIntoArray(Parts, TEXT("|"), false);
 
-			// 清理可能存在的后缀
-			FString RealName, Trash;
-			if(Name.Split("|", &RealName, &Trash)) Name = RealName;
+		if (Parts.Num() >= 3)
+		{
+			ID = Parts[0];
+			Name = Parts[1];
+			Type = Parts[2]; // 获取类型
+
+			// ID 查重 (保持不变)
+			if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase)) return;
+			LastProcessedID = ID;
 
 			if (OnAddPolyItemDelegate.IsBound())
 			{
-				OnAddPolyItemDelegate.Broadcast(ID, Name);
+				// 广播三个参数
+				OnAddPolyItemDelegate.Broadcast(ID, Name, Type);
 			}
 		}
 	}
@@ -165,5 +167,15 @@ void UGISWebWidget::ActivateReconstructionTool()
 	{
 		// 切换到 JS 的 'reconstruct' 模式
 		MapBrowser->ExecuteJavascript(TEXT("setMode('reconstruct');"));
+	}
+}
+
+void UGISWebWidget::FilterByType(FString TypeName)
+{
+	if (MapBrowser)
+	{
+		// 调用 JS: filterPolys('Normal')
+		FString Script = FString::Printf(TEXT("filterPolys('%s');"), *TypeName);
+		MapBrowser->ExecuteJavascript(Script);
 	}
 }

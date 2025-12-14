@@ -9,8 +9,8 @@
 
 class UWebBrowser;
 
-// 代理：通知蓝图加列表
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAddPolyItem, FString, ID, FString, Name);
+// 【修改】增加 Type 参数
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnAddPolyItem, FString, ID, FString, Name, FString, Type);
 
 UCLASS()
 class CITYGIS_API UGISWebWidget : public UUserWidget
@@ -57,7 +57,10 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void ActivateReconstructionTool();
 
-
+	// 【新增】筛选功能
+	UFUNCTION(BlueprintCallable)
+	void FilterByType(FString TypeName); // "all", "Normal", "Custom"...
+	
 private:
 	UFUNCTION()
 	void OnTitleChanged(const FText& TitleText);
