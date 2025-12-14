@@ -20,7 +20,7 @@ void UGISWebWidget::NativeConstruct()
 		// 绑定通信
 		MapBrowser->OnUrlChanged.AddUniqueDynamic(this, &UGISWebWidget::OnTitleChanged);
 
-		MapBrowser->OnConsoleMessage.AddUniqueDynamic(this, &UGISWebWidget::OnJSMessageRecv);
+		MapBrowser->OnConsoleMessage.AddUniqueDynamic(this, &UGISWebWidget::HandleConsoleMessage);
 	}
 }
 
@@ -31,7 +31,7 @@ void UGISWebWidget::NativeDestruct()
 	if (MapBrowser)
 	{
 		MapBrowser->OnUrlChanged.RemoveDynamic(this, &UGISWebWidget::OnTitleChanged);
-		MapBrowser->OnConsoleMessage.RemoveDynamic(this, &UGISWebWidget::OnJSMessageRecv);
+		MapBrowser->OnConsoleMessage.RemoveDynamic(this, &UGISWebWidget::HandleConsoleMessage);
 	}
 }
 
@@ -61,13 +61,24 @@ void UGISWebWidget::OnTitleChanged(const FText& TitleText)
 {
 }
 
-void UGISWebWidget::OnJSMessageRecv(const FString& Message, const FString& Source, int32 Line)
+void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& Source, int32 Line)
 {
 	// Message 就是 JS 里 console.log("...") 的内容
 
 	// 为了防止处理无关的报错日志，我们只处理以 UE_ 开头的
 	if (!Message.StartsWith("UE_")) return;
 
+	// 【核心修复 2】微秒级时间防抖 (Time Debounce)
+	// 如果这条消息距离上一条消息小于 0.1 秒，直接视为引擎回显或BUG，丢弃。
+	// (因为我们的 JS 队列是间隔 0.3 秒发送的，所以合法消息不会被误杀)
+	double CurrentTime = FPlatformTime::Seconds();
+	const double& DeltaMinus = CurrentTime - LastLogTime;
+	if (DeltaMinus < 0.01) 
+	{
+		return; 
+	}
+	LastLogTime = CurrentTime;
+	
 	// 打印一下，确保我们收到了
 	UE_LOG(LogTemp, Log, TEXT("GIS Received JS Message: %s"), *Message);
 
@@ -88,16 +99,24 @@ void UGISWebWidget::OnJSMessageRecv(const FString& Message, const FString& Sourc
 	{
 		FString Content = Message.RightChop(7);
 		FString ID, Name;
-		// 注意：JS里我们加了时间戳 |Time，这里 Split 只会切第一刀，所以 ID 是干净的，Name 里可能带后缀
+        
 		if (Content.Split("|", &ID, &Name))
 		{
-			// 清理 Name 里的时间戳后缀 (如果有)
-			FString RealName, Trash;
-			if (Name.Split("|", &RealName, &Trash)) Name = RealName;
-
-			if (OnAddPolyItem.IsBound())
+			// 【核心修复 3】ID 查重 (配合头文件变量)
+			if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase))
 			{
-				OnAddPolyItem.Broadcast(ID, Name);
+				UE_LOG(LogTemp, Warning, TEXT("GIS: Blocked Duplicate ID: %s"), *ID);
+				return; // 拦截！
+			}
+			LastProcessedID = ID; // 更新记录
+
+			// 清理可能存在的后缀
+			FString RealName, Trash;
+			if(Name.Split("|", &RealName, &Trash)) Name = RealName;
+
+			if (OnAddPolyItemDelegate.IsBound())
+			{
+				OnAddPolyItemDelegate.Broadcast(ID, Name);
 			}
 		}
 	}

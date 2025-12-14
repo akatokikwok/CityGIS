@@ -19,8 +19,12 @@ class CITYGIS_API UGISWebWidget : public UUserWidget
 
 protected:
 	UPROPERTY(BlueprintAssignable)
-	FOnAddPolyItem OnAddPolyItem;
+	FOnAddPolyItem OnAddPolyItemDelegate;
 
+	// 绑定蓝图里的 Web Browser 组件，名字必须叫 MapBrowser
+	UPROPERTY(meta = (BindWidget))
+	UWebBrowser* MapBrowser = nullptr;
+	
 public:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -53,18 +57,17 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void ActivateReconstructionTool();
 
-	// 绑定蓝图里的 Web Browser 组件，名字必须叫 MapBrowser
-	UPROPERTY(meta = (BindWidget))
-	UWebBrowser* MapBrowser = nullptr;
 
 private:
-	// 监听 JS 发来的数据
 	UFUNCTION()
 	void OnTitleChanged(const FText& TitleText);
 
-	//
+	// 监听 JS 发来的数据链条
 	UFUNCTION()
-	void OnJSMessageRecv(const FString& Message, const FString& Source, int32 Line);
+	void HandleConsoleMessage(const FString& Message, const FString& Source, int32 Line);
 
 	FString SaveFilePath;
+
+	FString LastProcessedID; 
+	double LastLogTime = 0.0f; // 用于防止微秒级重复
 };
