@@ -24,6 +24,11 @@ void UGISWebWidget::NativeConstruct()
 
 		MapBrowser->OnConsoleMessage.AddUniqueDynamic(this, &UGISWebWidget::HandleConsoleMessage);
 	}
+
+	// 绑定滑块事件
+	if (Slider_R) Slider_R->OnValueChanged.AddUniqueDynamic(this, &UGISWebWidget::OnColorSliderChanged);
+	if (Slider_G) Slider_G->OnValueChanged.AddUniqueDynamic(this, &UGISWebWidget::OnColorSliderChanged);
+	if (Slider_B) Slider_B->OnValueChanged.AddUniqueDynamic(this, &UGISWebWidget::OnColorSliderChanged);
 }
 
 void UGISWebWidget::NativeDestruct()
@@ -184,6 +189,32 @@ void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, F
 	}
 }
 
+void UGISWebWidget::OnColorSliderChanged(float Value)
+{
+	if (Slider_R && Slider_G && Slider_B)
+	{
+		FLinearColor NewColor(Slider_R->GetValue(), Slider_G->GetValue(), Slider_B->GetValue());
+        
+		// 更新预览和 Hex 文本
+		if (Color_Preview) Color_Preview->SetBrushColor(NewColor);
+		if (Edit_Input_Color) Edit_Input_Color->SetText(FText::FromString("#" + NewColor.ToFColor(true).ToHex()));
+	}
+}
+
+void UGISWebWidget::UpdateColorUI(FLinearColor Color)
+{
+	// 1. 更新滑块位置
+	if (Slider_R) Slider_R->SetValue(Color.R);
+	if (Slider_G) Slider_G->SetValue(Color.G);
+	if (Slider_B) Slider_B->SetValue(Color.B);
+
+	// 2. 更新预览色块
+	if (Color_Preview) Color_Preview->SetBrushColor(Color);
+
+	// 3. 更新 Hex 文本框
+	if (Edit_Input_Color) Edit_Input_Color->SetText(FText::FromString("#" + Color.ToFColor(true).ToHex()));
+}
+
 void UGISWebWidget::LoadMap(FString FileName)
 {
 	// 载入前清空 UI 和 字典
@@ -257,12 +288,19 @@ void UGISWebWidget::OpenEditDialog(class UGISPolyItem* ItemToEdit)
 	if (!ItemToEdit) return;
 	CurrentEditingItem = ItemToEdit;
 
-	// 填充数据到弹窗
+	// 填充名字
 	if (Edit_Input_Name) Edit_Input_Name->SetText(FText::FromString(ItemToEdit->GetItemName()));
-	if (Edit_Input_Color) Edit_Input_Color->SetText(FText::FromString(ItemToEdit->GetItemColor()));
 	if (Edit_Input_Opacity) Edit_Input_Opacity->SetText(FText::AsNumber(ItemToEdit->GetItemOpacity()));
 
-	// 显示弹窗
+	// 解析颜色 Hex -> LinearColor
+	FString Hex = ItemToEdit->GetItemColor();
+	FLinearColor CurrentColor = FLinearColor::Blue; // 默认防崩
+	FColor SrgbColor = FColor::FromHex(Hex);
+	CurrentColor = FLinearColor::FromSRGBColor(SrgbColor);
+
+	// 更新 UI
+	UpdateColorUI(CurrentColor);
+
 	if (Edit_Dialog_Overlay) Edit_Dialog_Overlay->SetVisibility(ESlateVisibility::Visible);
 }
 
@@ -271,6 +309,7 @@ void UGISWebWidget::SaveEditChanges()
 	// 确保当前有选中的项，且浏览器有效
 	if (CurrentEditingItem.IsValid() && MapBrowser)
 	{
+		// 直接从 Hex 文本框取值 (因为它被滑块实时更新了)
 		FString NewName = Edit_Input_Name->GetText().ToString();
 		FString NewColor = Edit_Input_Color->GetText().ToString();
 		FString NewOpacityStr = Edit_Input_Opacity->GetText().ToString();
@@ -293,4 +332,9 @@ void UGISWebWidget::CloseEditDialog()
 {
 	if (Edit_Dialog_Overlay) Edit_Dialog_Overlay->SetVisibility(ESlateVisibility::Collapsed);
 	CurrentEditingItem = nullptr;
+}
+
+void UGISWebWidget::OnPresetColorClicked(FLinearColor NewColor)
+{
+	UpdateColorUI(NewColor);
 }

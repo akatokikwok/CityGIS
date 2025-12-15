@@ -5,9 +5,11 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/Border.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableText.h"
 #include "Components/ScrollBox.h"
+#include "Components/Slider.h"
 #include "GISWebWidget.generated.h"
 
 class UGISPolyItem;
@@ -64,6 +66,12 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	UEditableText* Edit_Input_Opacity; // 用文本框输 0.5 简单
+
+	// 【新增 UI】颜色相关控件
+	UPROPERTY(meta = (BindWidget)) UBorder* Color_Preview;
+	UPROPERTY(meta = (BindWidget)) USlider* Slider_R;
+	UPROPERTY(meta = (BindWidget)) USlider* Slider_G;
+	UPROPERTY(meta = (BindWidget)) USlider* Slider_B;
 	
 public:
 	virtual void NativeConstruct() override;
@@ -112,6 +120,11 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void CloseEditDialog();
 
+	// 预设按钮建议在蓝图里绑定事件调用 C++ 函数，或者用 BindWidgetOptional
+	// 这里我们用通用函数处理预设点击
+	UFUNCTION(BlueprintCallable)
+	void OnPresetColorClicked(FLinearColor NewColor);
+	
 private:
 	UFUNCTION()
 	void OnTitleChanged(const FText& TitleText);
@@ -123,6 +136,12 @@ private:
 	// 核心：处理新条目创建和层级挂载
 	void ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color, float Opacity); // 更新参数
 
+	// 内部函数：当滑块变动时更新 Hex 和 预览
+	UFUNCTION() void OnColorSliderChanged(float Value);
+
+	// 辅助：更新 UI 显示 (Hex 文本, 预览图, 滑块位置)
+	void UpdateColorUI(FLinearColor Color);
+	
 	// 字典：快速查找父级 Widget
 	TMap<FString, UGISPolyItem*> WidgetMap;
 
