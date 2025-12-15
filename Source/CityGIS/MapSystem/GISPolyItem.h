@@ -17,16 +17,31 @@ class CITYGIS_API UGISPolyItem : public UUserWidget
 	GENERATED_BODY()
 
 	friend class UGISWebWidget;
+
 public:
 	virtual void NativeConstruct() override;
 
-	// 初始化数据 (代替蓝图的 Expose on Spawn)
-	void SetupItem(FString InID, FString InName, FString InType, UGISWebWidget* InMainUI);
+	// 【修改】SetupItem 增加颜色和透明度参数
+	void SetupItem(FString InID, FString InName, FString InType, FString InParentID, FString InColor, float InOpacity,
+	               UGISWebWidget* InMainUI);
 
 	// 添加子项到下方的容器中
 	void AddChildItem(UGISPolyItem* ChildWidget);
 
+	// 获取当前属性供编辑弹窗使用
+	FString GetItemID() const { return ItemID; }
+	FString GetItemName() const { return ItemName; }
+	FString GetItemColor() const { return ItemColor; }
+	float GetItemOpacity() const { return ItemOpacity; }
+
+	// 【新增】更新数据接口
+	void UpdateData(FString NewName, FString NewColor, float NewOpacity);
+	
 protected:
+	// 【新增】编辑按钮
+	UPROPERTY(meta = (BindWidget))
+	UButton* Btn_Edit;
+
 	// --- UI 绑定 (名字必须和 UMG 里的一样) ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
 	UTextBlock* Txt_Name;
@@ -49,12 +64,19 @@ protected:
 	UBorder* Content_Border;
 
 private:
-	UFUNCTION() void OnFocusClicked();
-	UFUNCTION() void OnDeleteClicked();
+	UFUNCTION()
+	void OnFocusClicked();
+	UFUNCTION()
+	void OnDeleteClicked();
+	UFUNCTION()
+	void OnEditClicked(); // 新增点击事件
 
 	FString ItemID;
+	FString ItemName; // 存一下名字
 	FString ItemType;
-	
+	FString ItemColor; // 存颜色 Hex
+	float ItemOpacity; // 存透明度
+
 	// 弱引用主界面，防止内存泄漏
 	TWeakObjectPtr<UGISWebWidget> MainUI;
 };

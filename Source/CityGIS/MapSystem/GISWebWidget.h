@@ -14,7 +14,8 @@ class UGISPolyItem;
 class UWebBrowser;
 
 // 【修改】增加 ParentID 参数 (共4个参数)
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnAddPolyItem, FString, ID, FString, Name, FString, Type, FString, ParentID);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnAddPolyItem, FString, ID, FString, Name, FString, Type, FString,
+                                              ParentID);
 
 UCLASS()
 class CITYGIS_API UGISWebWidget : public UUserWidget
@@ -30,18 +31,39 @@ protected:
 	UWebBrowser* MapBrowser = nullptr;
 
 	// 两个列表容器
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UScrollBox* List_Admin;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UScrollBox* List_Reconstruct;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
+	UScrollBox* List_Admin;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
+	UScrollBox* List_Reconstruct;
 
 	// UI 控件
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UEditableText* Input_SaveName;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UComboBoxString* Combo_Files;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget)) UComboBoxString* Combo_Filter;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
+	UEditableText* Input_SaveName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
+	UComboBoxString* Combo_Files;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
+	UComboBoxString* Combo_Filter;
 
 	// --- 资源引用 ---
 	// 在蓝图 Class Defaults 里设置这个，指向 WBP_PolyItem
 	UPROPERTY(EditAnywhere, Category = "Config")
 	TSubclassOf<UGISPolyItem> PolyItemClass;
+
+	// 【新增 UI】编辑弹窗容器 (Overlay 或 CanvasPanel)
+	UPROPERTY(meta = (BindWidget))
+	UWidget* Edit_Dialog_Overlay;
+
+	// 【新增 UI】编辑弹窗里的输入控件
+	UPROPERTY(meta = (BindWidget))
+	UEditableText* Edit_Input_Name;
+
+	UPROPERTY(meta = (BindWidget))
+	UEditableText* Edit_Input_Color; // 简单起见用 Hex 文本框
+
+	UPROPERTY(meta = (BindWidget))
+	UEditableText* Edit_Input_Opacity; // 用文本框输 0.5 简单
 	
 public:
 	virtual void NativeConstruct() override;
@@ -62,7 +84,7 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	void FocusID(FString ID);
-	
+
 	UFUNCTION(BlueprintCallable)
 	void DeleteID(FString ID);
 
@@ -78,7 +100,18 @@ public:
 	// 【新增】筛选功能
 	UFUNCTION(BlueprintCallable)
 	void FilterByType(FString TypeName); // "all", "Normal", "Custom"...
-	
+
+	// 【新增】打开编辑弹窗
+	void OpenEditDialog(class UGISPolyItem* ItemToEdit);
+
+	// 【新增】保存编辑 (供蓝图按钮调用)
+	UFUNCTION(BlueprintCallable)
+	void SaveEditChanges();
+
+	// 【新增】关闭编辑弹窗
+	UFUNCTION(BlueprintCallable)
+	void CloseEditDialog();
+
 private:
 	UFUNCTION()
 	void OnTitleChanged(const FText& TitleText);
@@ -88,13 +121,16 @@ private:
 	void HandleConsoleMessage(const FString& Message, const FString& Source, int32 Line);
 
 	// 核心：处理新条目创建和层级挂载
-	void ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID);
+	void ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color, float Opacity); // 更新参数
 
 	// 字典：快速查找父级 Widget
 	TMap<FString, UGISPolyItem*> WidgetMap;
-	
+
 	FString SaveFilePath;
 
-	FString LastProcessedID; 
+	FString LastProcessedID;
 	double LastLogTime = 0.0f; // 用于防止微秒级重复
+	
+	// 当前正在编辑的 Item 指针
+	TWeakObjectPtr<UGISPolyItem> CurrentEditingItem;
 };

@@ -102,26 +102,28 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 	else if (Message.StartsWith("UE_ADD:"))
 	{
 		FString Content = Message.RightChop(7);
-		FString ID, Name, Type, ParentID;
+		// FString ID, Name, Type, ParentID;
 
 		// 格式: ID|Name|Type|Timestamp
 		// 我们需要拆解前三个
 		TArray<FString> Parts;
 		Content.ParseIntoArray(Parts, TEXT("|"), false);
 
-		if (Parts.Num() >= 4) // 至少要有4个部分
+		if (Parts.Num() >= 7) // 至少要有7个部分
 		{
-			ID = Parts[0];
-			Name = Parts[1];
-			Type = Parts[2]; // 获取类型
-			ParentID = Parts[3]; // 获取 ParentID-UI层级树
+			FString ID = Parts[0];
+			FString Name = Parts[1];
+			FString Type = Parts[2];
+			FString ParentID = Parts[3];
+			FString Color = Parts[4];
+			float Opacity = FCString::Atof(*Parts[5]);
 
 			// ID 查重 (保持不变)
 			if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase)) return;
 			LastProcessedID = ID;
 
 			// 调用 C++ 内部函数构建 UI
-			ProcessAddPolyItem(ID, Name, Type, ParentID);
+			ProcessAddPolyItem(ID, Name, Type, ParentID, Color, Opacity);
 
 			if (OnAddPolyItemDelegate.IsBound())
 			{
@@ -133,7 +135,8 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 }
 
 // 核心：C++ 构建树状 UI
-void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID)
+void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color,
+                                       float Opacity) // 更新参数
 {
 	if (!PolyItemClass)
 	{
@@ -146,7 +149,8 @@ void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, F
 	if (!NewItem) return;
 
 	// 2. 初始化数据
-	NewItem->SetupItem(ID, Name, Type, this);
+	// 传入新参数
+	NewItem->SetupItem(ID, Name, Type, ParentID, Color, Opacity, this);
 
 	// 3. 存入字典
 	WidgetMap.Add(ID, NewItem);
@@ -246,4 +250,47 @@ void UGISWebWidget::FilterByType(FString TypeName)
 		FString Script = FString::Printf(TEXT("filterPolys('%s');"), *TypeName);
 		MapBrowser->ExecuteJavascript(Script);
 	}
+}
+
+void UGISWebWidget::OpenEditDialog(class UGISPolyItem* ItemToEdit)
+{
+	if (!ItemToEdit) return;
+	CurrentEditingItem = ItemToEdit;
+
+	// 填充数据到弹窗
+	if (Edit_Input_Name) Edit_Input_Name->SetText(FText::FromString(ItemToEdit->GetItemName()));
+	if (Edit_Input_Color) Edit_Input_Color->SetText(FText::FromString(ItemToEdit->GetItemColor()));
+	if (Edit_Input_Opacity) Edit_Input_Opacity->SetText(FText::AsNumber(ItemToEdit->GetItemOpacity()));
+
+	// 显示弹窗
+	if (Edit_Dialog_Overlay) Edit_Dialog_Overlay->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UGISWebWidget::SaveEditChanges()
+{
+	// 确保当前有选中的项，且浏览器有效
+	if (CurrentEditingItem.IsValid() && MapBrowser)
+	{
+		FString NewName = Edit_Input_Name->GetText().ToString();
+		FString NewColor = Edit_Input_Color->GetText().ToString();
+		FString NewOpacityStr = Edit_Input_Opacity->GetText().ToString();
+		float NewOpacity = FCString::Atof(*NewOpacityStr); // 转为 float
+        
+		FString ID = CurrentEditingItem->GetItemID();
+
+		// 1. 调用 JS 更新地图 (保持不变)
+		FString Script = FString::Printf(TEXT("updatePolyAttributes('%s', '%s', '%s', '%s');"), *ID, *NewName, *NewColor, *NewOpacityStr);
+		MapBrowser->ExecuteJavascript(Script);
+
+		// 2. 【核心修复】调用列表项的自我更新函数
+		CurrentEditingItem->UpdateData(NewName, NewColor, NewOpacity);
+	}
+    
+	CloseEditDialog();
+}
+
+void UGISWebWidget::CloseEditDialog()
+{
+	if (Edit_Dialog_Overlay) Edit_Dialog_Overlay->SetVisibility(ESlateVisibility::Collapsed);
+	CurrentEditingItem = nullptr;
 }
