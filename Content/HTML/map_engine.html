@@ -86,9 +86,9 @@
     <div id="save_modal">
         <h4 id="modal_title">区域保存</h4>
         <div id="color_filter_box">
-            <span class="input-label">保留颜色:</span>
+            <span class="input-label">分析结果 (智能筛选):</span>
             <select id="color_selector">
-                <option value="yellow" selected>🟡 新拓展区 (黄色)</option>
+                <option value="yellow">🟡 新拓展区 (黄色)</option>
                 <option value="purple">🟣 单侧覆盖 (紫色)</option>
                 <option value="pink">🌸 重叠核心 (淡红)</option>
                 <option value="all">💠 所有区域</option>
@@ -116,7 +116,6 @@
     </div>
 </body>
 </html>
-
 <script>
     window.onerror = function(msg, url, line) { console.log("UE_ERROR:JS_Error:" + msg + " Line:" + line); };
     document.oncontextmenu = function() { return false; }; 
@@ -126,10 +125,6 @@
     map.enableScrollWheelZoom(true);
     map.setTilt(0);
 
-    // ==========================================
-    // ⚙️ 配置项：移动速度 (像素/帧)
-    // 调大这个数值可以让地图飞得更快
-    // ==========================================
     const MOVE_SPEED = 15; 
 
     var appState = {
@@ -190,7 +185,7 @@
         }
     };
 
-    // ================= 2. 核心：WASD 游戏级移动逻辑 =================
+    // ================= 2. WASD 移动逻辑 =================
     var keyState = { w: false, a: false, s: false, d: false };
     var isPanningLoopActive = false;
 
@@ -208,32 +203,21 @@
         if(['w','a','s','d'].includes(k)) keyState[k] = false;
     });
 
-    // 每一帧调用的渲染循环
     function panMapLoop() {
         if (!keyState.w && !keyState.a && !keyState.s && !keyState.d) { 
             isPanningLoopActive = false; 
             return; 
         }
-        
-        // 1. 获取当前中心点的屏幕坐标
         var centerPt = map.getCenter();
         var centerPx = map.pointToPixel(centerPt);
-
-        // 2. 根据按键计算偏移 (X/Y 反转注意：W是向上，Y减小)
-        // 注意：地图移动方向和视角移动方向是反的，按W视角向上=地图向下
         var dx = 0; var dy = 0;
-        if (keyState.w) dy -= MOVE_SPEED; // 视角向上 (地图下移)
-        if (keyState.s) dy += MOVE_SPEED; // 视角向下
-        if (keyState.a) dx -= MOVE_SPEED; // 视角向左
-        if (keyState.d) dx += MOVE_SPEED; // 视角向右
-
-        // 3. 计算新中心点
+        if (keyState.w) dy -= MOVE_SPEED; 
+        if (keyState.s) dy += MOVE_SPEED; 
+        if (keyState.a) dx -= MOVE_SPEED; 
+        if (keyState.d) dx += MOVE_SPEED; 
         var newCenterPx = new BMapGL.Pixel(centerPx.x + dx, centerPx.y + dy);
         var newCenterPt = map.pixelToPoint(newCenterPx);
-
-        // 4. 强制设置中心点 (noAnimation: true 是关键，实现瞬间位移，形成连续动画)
         map.setCenter(newCenterPt, { noAnimation: true });
-
         requestAnimationFrame(panMapLoop);
     }
 
@@ -243,7 +227,7 @@
     container.addEventListener('mousedown', function(e) {
         if(appState.mode === 'browse') return; 
         if(e.target.closest('#save_modal') || e.target.closest('#mode_select_modal')) return;
-        if(e.button !== 0) return; // 只响应左键
+        if(e.button !== 0) return; 
 
         if (appState.drawMethod === 'Freehand') handleFreehandDown(e);
         else if (appState.drawMethod === 'Polyline') handlePolylineDown(e);
@@ -268,7 +252,7 @@
         if (appState.drawMethod === 'Polyline') finishPolyline();
     });
 
-    // ================= 4. 方案一：手绘逻辑 =================
+    // ================= 4. 手绘逻辑 =================
     function handleFreehandDown(e) {
         if (!appState.isDrawing) {
             appState.isDrawing = true;
@@ -292,7 +276,7 @@
         }
     }
 
-    // ================= 5. 方案二：折线逻辑 =================
+    // ================= 5. 折线逻辑 =================
     function handlePolylineDown(e) {
         var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
         appState.drawPath.push(pt);
@@ -359,7 +343,7 @@
         hideHint();
     }
 
-    // ================= 7. 保存逻辑 =================
+    // ================= 7. 业务逻辑 =================
     function executeAnalysis(polyX) {
         clearAnalysis(); appState.tempResultData = [];
         if(appState.polygons.length === 0) { prepareSingleSave(polyX); return; }
@@ -380,12 +364,11 @@
             var interTotal = turf.intersect(featX, unionAll);
             var interPurple = (interTotal && interXC) ? turf.difference(interTotal, interXC) : interTotal;
             if(interPurple) cacheResult(interPurple, "#800080", 0.4, "单侧覆盖", false, 'purple');
-            if(interTotal) {
-                var lines = turf.polygonToLine(interTotal);
-                cacheResult(lines, "#FFA500", 1.0, "交界线", true, 'orange');
-            }
+            
+            // 计算黄色区域 (新拓展)
             var resE = turf.difference(featX, unionAll);
             if(resE) cacheResult(resE, "yellow", 0.3, "新拓展区", false, 'yellow');
+            
             showModal(true); 
         } catch(e) { console.log("UE_ERROR:" + e.message); alert("分析错误"); }
     }
@@ -408,15 +391,56 @@
         showModal(false);
     }
 
+    // --- 智能弹窗：根据数据可用性动态更新选项 ---
     function showModal(isMulti) {
         var modal = document.getElementById('save_modal');
         var colorBox = document.getElementById('color_filter_box');
-        if(isMulti) { colorBox.style.display = 'block'; document.getElementById('color_selector').value = 'yellow'; } else { colorBox.style.display = 'none'; }
+        var colorSel = document.getElementById('color_selector');
+
+        if(isMulti) { 
+            colorBox.style.display = 'block'; 
+            
+            // 1. 检查数据
+            var hasYellow = appState.tempResultData.some(i => i.rawType === 'yellow');
+            var hasPurple = appState.tempResultData.some(i => i.rawType === 'purple');
+            var hasPink   = appState.tempResultData.some(i => i.rawType === 'pink');
+
+            // 2. 更新选项 (辅助函数)
+            updateOption(colorSel, 'yellow', hasYellow, "🟡 新拓展区 (黄色)");
+            updateOption(colorSel, 'purple', hasPurple, "🟣 单侧覆盖 (紫色)");
+            updateOption(colorSel, 'pink',   hasPink,   "🌸 重叠核心 (淡红)");
+            
+            // 3. 自动选中一个有数据的
+            if (hasYellow) colorSel.value = 'yellow';
+            else if (hasPurple) colorSel.value = 'purple';
+            else if (hasPink) colorSel.value = 'pink';
+            else colorSel.value = 'all';
+
+        } else { 
+            colorBox.style.display = 'none'; 
+        }
+        
         document.getElementById('poly_name_input').value = "我的区域" + DEFAULT_NAME_IDX;
         document.getElementById('type_selector').value = 'Street'; 
         onTypeChanged();
         modal.style.display = 'block';
     }
+
+    // 更新下拉框选项状态
+    function updateOption(sel, val, hasData, label) {
+        for (var i=0; i<sel.options.length; i++) {
+            if (sel.options[i].value === val) {
+                if (!hasData) {
+                    sel.options[i].text = label + " [无数据]";
+                    sel.options[i].disabled = true;
+                } else {
+                    sel.options[i].text = label;
+                    sel.options[i].disabled = false;
+                }
+            }
+        }
+    }
+
     function closeModal() { document.getElementById('save_modal').style.display = 'none'; clearAnalysis(); }
     
     window.onTypeChanged = function() {
@@ -454,7 +478,10 @@
         var toSave = [];
         if(choice === 'all' || choice === 'single') toSave = appState.tempResultData;
         else toSave = appState.tempResultData.filter(i => i.rawType === choice);
-        if(toSave.length === 0) { alert("无数据"); return; }
+        
+        // 这里的校验现在更有意义了，因为我们已经预先禁用了无数据的选项
+        if(toSave.length === 0) { alert("无数据 (请检查是否选中了有效区域)"); return; }
+
         document.getElementById('save_modal').style.display = 'none';
         appState.isSaving = true;
         processSaveQueue(toSave, nameInput, selectedType, parentId, 0);
