@@ -7,7 +7,23 @@
         html, body, #map_container { width: 100%; height: 100%; overflow: hidden; margin: 0; font-family: "微软雅黑"; }
         .anchorBL, .BMap_cpyCtrl { display: none; } 
 
-        /* ================= 2. 弹窗样式 ================= */
+        /* ================= 2. 悬浮样式工具条 (新增) ================= */
+        #style_toolbox {
+            display: none; /* 默认隐藏，编辑模式显示 */
+            position: fixed; top: 20px; right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px; border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 9990; width: 200px;
+            backdrop-filter: blur(5px); border: 1px solid #eee;
+        }
+        #style_toolbox h4 { margin: 0 0 10px 0; font-size: 14px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .tool-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; color: #555; }
+        input[type=color] { border: none; width: 40px; height: 25px; cursor: pointer; background: none; }
+        input[type=range] { width: 100px; cursor: pointer; }
+        .val-display { font-size: 12px; color: #007bff; font-weight: bold; width: 30px; text-align: right; }
+
+        /* ================= 3. 模式选择弹窗 ================= */
         #mode_select_modal {
             display: none; position: fixed; 
             left: 50%; top: 50%; transform: translate(-50%, -50%);
@@ -25,11 +41,8 @@
         .mode-btn:hover { border-color: #007bff; background: #eef7ff; }
         .mode-btn strong { display: block; font-size: 16px; margin-bottom: 4px; color: #333; }
         .mode-btn span { font-size: 12px; color: #666; }
-        .color-preview-box { display: flex; justify-content: space-between; margin-bottom: 20px; }
-        .color-opt { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; transition: 0.2s; }
-        .color-opt.active { border-color: #333; transform: scale(1.1); }
 
-        /* ================= 3. 保存弹窗样式 ================= */
+        /* ================= 4. 保存弹窗样式 ================= */
         #save_modal {
             display: none; position: fixed; 
             left: 50%; bottom: 80px; transform: translateX(-50%);
@@ -43,12 +56,13 @@
         @keyframes popUp { from { bottom: -200px; opacity: 0; } to { bottom: 80px; opacity: 1; } }
         #save_modal h4 { margin: 0 0 10px 0; font-size: 16px; color: #333; text-align: center; }
         .input-label { font-size: 12px; color: #666; margin-bottom: 4px; display: block; }
-        select, input { width: 100%; padding: 8px; margin-bottom: 12px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 6px; outline: none; font-size: 14px; }
+        select, input[type=text] { width: 100%; padding: 8px; margin-bottom: 12px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 6px; outline: none; font-size: 14px; }
         #parent_container { display: none; background: #f9f9f9; padding: 8px; border-radius: 6px; margin-bottom: 10px; border: 1px dashed #ccc;}
         .btn-group { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px;}
         .btn-group button { flex: 1; padding: 8px; cursor: pointer; border: none; border-radius: 6px; color: white; font-weight: bold; }
         #btn_confirm { background-color: #007bff; } #btn_confirm:hover { background-color: #0056b3; }
         #btn_cancel { background-color: #6c757d; } #btn_cancel:hover { background-color: #5a6268; }
+        
         #hint_bar {
             display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
             background: rgba(0,0,0,0.7); color: white; padding: 8px 16px; border-radius: 20px; font-size: 14px;
@@ -62,16 +76,25 @@
     <div id="map_container"></div>
     <div id="hint_bar">操作提示...</div>
 
+    <div id="style_toolbox">
+        <h4>🎨 绘图样式板</h4>
+        <div class="tool-row">
+            <span>填充颜色</span>
+            <input type="color" id="tool_color" value="#3388ff" onchange="updateStyleState()">
+        </div>
+        <div class="tool-row">
+            <span>不透明度</span>
+            <input type="range" id="tool_opacity" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateStyleState()">
+            <span id="opacity_val" class="val-display">0.5</span>
+        </div>
+        <div style="font-size:10px; color:#999; margin-top:5px;">
+            * 绘制时实时生效<br>
+            * WASD 移动地图
+        </div>
+    </div>
+
     <div id="mode_select_modal">
         <h3>🛠️ 选择绘制方案</h3>
-        <div class="input-label" style="text-align:left; margin-bottom:10px;">预设填充颜色:</div>
-        <div class="color-preview-box" id="color_opts">
-            <div class="color-opt active" style="background:rgba(0,0,255,0.5)" data-col="blue" onclick="selectPreColor(this)"></div>
-            <div class="color-opt" style="background:rgba(255,0,0,0.5)" data-col="red" onclick="selectPreColor(this)"></div>
-            <div class="color-opt" style="background:rgba(0,255,0,0.5)" data-col="green" onclick="selectPreColor(this)"></div>
-            <div class="color-opt" style="background:rgba(255,165,0,0.5)" data-col="orange" onclick="selectPreColor(this)"></div>
-            <div class="color-opt" style="background:rgba(128,0,128,0.5)" data-col="purple" onclick="selectPreColor(this)"></div>
-        </div>
         <div class="mode-btn" onclick="startDraw('Freehand')">
             <strong>方案一：手绘拖拽</strong>
             <span>按住左键拖动，松开即闭合。<br>(适合小型、不规则区域)</span>
@@ -86,11 +109,11 @@
     <div id="save_modal">
         <h4 id="modal_title">区域保存</h4>
         <div id="color_filter_box">
-            <span class="input-label">分析结果 (智能筛选):</span>
+            <span class="input-label">分析结果:</span>
             <select id="color_selector">
-                <option value="yellow">🟡 新拓展区 (黄色)</option>
-                <option value="purple">🟣 单侧覆盖 (紫色)</option>
-                <option value="pink">🌸 重叠核心 (淡红)</option>
+                <option value="yellow">🟡 新拓展区</option>
+                <option value="purple">🟣 单侧覆盖</option>
+                <option value="pink">🌸 重叠核心</option>
                 <option value="all">💠 所有区域</option>
             </select>
         </div>
@@ -103,9 +126,7 @@
         </select>
         <div id="parent_container">
             <span class="input-label" id="parent_label">附着到:</span>
-            <select id="parent_selector">
-                <option value="">请选择...</option>
-            </select>
+            <select id="parent_selector"><option value="">请选择...</option></select>
         </div>
         <span class="input-label">区域名称:</span>
         <input type="text" id="poly_name_input" placeholder="请输入名称">
@@ -116,12 +137,13 @@
     </div>
 </body>
 </html>
+
 <script>
     window.onerror = function(msg, url, line) { console.log("UE_ERROR:JS_Error:" + msg + " Line:" + line); };
     document.oncontextmenu = function() { return false; }; 
 
     var map = new BMapGL.Map("map_container");
-    map.centerAndZoom(new BMapGL.Point(116.404, 39.915), 17);
+    map.centerAndZoom(new BMapGL.Point(121.474, 31.233), 17);
     map.enableScrollWheelZoom(true);
     map.setTilt(0);
 
@@ -130,7 +152,9 @@
     var appState = {
         mode: 'browse', 
         drawMethod: 'None',
-        preColor: 'blue',
+        // 当前激活的样式
+        currentStyle: { color: '#3388ff', opacity: 0.5 },
+        
         polygons: [], 
         drawPath: [], 
         tempPolyline: null,
@@ -143,11 +167,31 @@
     var ID_COUNTER = 1;
     var DEFAULT_NAME_IDX = 1; 
 
-    // ================= 1. 模式与状态控制 =================
+    // ================= 1. 样式与工具条逻辑 =================
+    window.updateStyleState = function() {
+        var col = document.getElementById('tool_color').value;
+        var op = parseFloat(document.getElementById('tool_opacity').value);
+        document.getElementById('opacity_val').innerText = op;
+        
+        appState.currentStyle = { color: col, opacity: op };
+
+        // 如果正在画线，实时更新线的颜色（用户体验更好）
+        if (appState.isDrawing && appState.tempPolyline) {
+            appState.tempPolyline.setStrokeColor(col);
+        }
+    };
+
+    // ================= 2. 模式控制 =================
     window.setMode = function(mode) {
         appState.mode = mode;
         closeModal(); clearAnalysis(); clearTemp();
         document.getElementById('mode_select_modal').style.display = 'none';
+        
+        // 工具条显隐逻辑
+        var toolbox = document.getElementById('style_toolbox');
+        if (mode === 'edit') toolbox.style.display = 'block';
+        else toolbox.style.display = 'none';
+
         hideHint();
 
         if(mode === 'browse') {
@@ -161,31 +205,30 @@
         else if (mode === 'reconstruct') {
             map.disableDragging();
             appState.drawMethod = 'Freehand';
-            appState.preColor = 'blue';
+            // 重构模式强制使用蓝色，不显示工具条
+            appState.currentStyle = { color: '#0000ff', opacity: 0.5 };
+            toolbox.style.display = 'none'; 
             showHint("WASD移动 | 左键手绘 | 重构模式");
         }
-    };
-
-    window.selectPreColor = function(el) {
-        document.querySelectorAll('.color-opt').forEach(d => d.classList.remove('active'));
-        el.classList.add('active');
-        appState.preColor = el.getAttribute('data-col');
     };
 
     window.startDraw = function(method) {
         appState.drawMethod = method;
         document.getElementById('mode_select_modal').style.display = 'none';
         
+        // 确保使用当前工具条的颜色
+        updateStyleState();
+
         if (method === 'Freehand') {
-            showHint("【WASD】移动地图 | 【左键拖拽】绘制区域");
+            showHint("【WASD】移动 | 【左键拖拽】绘制");
             map.setDefaultCursor("crosshair");
         } else {
-            showHint("【WASD】移动地图 | 【左键点击】定点 | 【双击】闭合");
+            showHint("【WASD】移动 | 【左键点击】定点 | 【双击】闭合");
             map.setDefaultCursor("crosshair");
         }
     };
 
-    // ================= 2. WASD 移动逻辑 =================
+    // ================= 3. WASD 移动逻辑 =================
     var keyState = { w: false, a: false, s: false, d: false };
     var isPanningLoopActive = false;
 
@@ -197,36 +240,28 @@
             if(!isPanningLoopActive) { isPanningLoopActive=true; panMapLoop(); } 
         }
     });
-    
     document.addEventListener('keyup', function(e) {
-        var k = e.key.toLowerCase(); 
-        if(['w','a','s','d'].includes(k)) keyState[k] = false;
+        var k = e.key.toLowerCase(); if(['w','a','s','d'].includes(k)) keyState[k] = false;
     });
-
     function panMapLoop() {
-        if (!keyState.w && !keyState.a && !keyState.s && !keyState.d) { 
-            isPanningLoopActive = false; 
-            return; 
-        }
+        if (!keyState.w && !keyState.a && !keyState.s && !keyState.d) { isPanningLoopActive = false; return; }
         var centerPt = map.getCenter();
         var centerPx = map.pointToPixel(centerPt);
         var dx = 0; var dy = 0;
-        if (keyState.w) dy -= MOVE_SPEED; 
-        if (keyState.s) dy += MOVE_SPEED; 
-        if (keyState.a) dx -= MOVE_SPEED; 
-        if (keyState.d) dx += MOVE_SPEED; 
+        if (keyState.w) dy -= MOVE_SPEED; if (keyState.s) dy += MOVE_SPEED; 
+        if (keyState.a) dx -= MOVE_SPEED; if (keyState.d) dx += MOVE_SPEED; 
         var newCenterPx = new BMapGL.Pixel(centerPx.x + dx, centerPx.y + dy);
         var newCenterPt = map.pixelToPoint(newCenterPx);
         map.setCenter(newCenterPt, { noAnimation: true });
         requestAnimationFrame(panMapLoop);
     }
 
-    // ================= 3. 统一交互路由 =================
+    // ================= 4. 统一交互路由 =================
     var container = document.getElementById('map_container');
 
     container.addEventListener('mousedown', function(e) {
         if(appState.mode === 'browse') return; 
-        if(e.target.closest('#save_modal') || e.target.closest('#mode_select_modal')) return;
+        if(e.target.closest('#save_modal') || e.target.closest('#mode_select_modal') || e.target.closest('#style_toolbox')) return;
         if(e.button !== 0) return; 
 
         if (appState.drawMethod === 'Freehand') handleFreehandDown(e);
@@ -235,7 +270,6 @@
 
     container.addEventListener('mousemove', function(e) {
         if(appState.mode === 'browse') return;
-        
         if (appState.drawMethod === 'Freehand') handleFreehandMove(e);
         else if (appState.drawMethod === 'Polyline') handlePolylineMove(e);
     });
@@ -243,7 +277,6 @@
     container.addEventListener('mouseup', function(e) {
         if(appState.mode === 'browse') return;
         if(e.button !== 0) return;
-
         if (appState.drawMethod === 'Freehand') handleFreehandUp(e);
     });
     
@@ -252,7 +285,7 @@
         if (appState.drawMethod === 'Polyline') finishPolyline();
     });
 
-    // ================= 4. 手绘逻辑 =================
+    // ================= 5. 绘图实现 =================
     function handleFreehandDown(e) {
         if (!appState.isDrawing) {
             appState.isDrawing = true;
@@ -276,7 +309,6 @@
         }
     }
 
-    // ================= 5. 折线逻辑 =================
     function handlePolylineDown(e) {
         var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
         appState.drawPath.push(pt);
@@ -288,8 +320,9 @@
             var lastPt = appState.drawPath[appState.drawPath.length - 1];
             var mousePt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
             if (appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine);
+            // 橡皮筋线也用当前颜色
             appState.tempMouseLine = new BMapGL.Polyline([lastPt, mousePt], {
-                strokeColor: appState.preColor, strokeWeight: 2, strokeStyle: 'dashed'
+                strokeColor: appState.currentStyle.color, strokeWeight: 2, strokeStyle: 'dashed'
             });
             map.addOverlay(appState.tempMouseLine);
         }
@@ -300,11 +333,11 @@
         finishDraw();
     }
 
-    // ================= 6. 绘图辅助 =================
     function redrawTempPolyline() {
         if(appState.tempPolyline) map.removeOverlay(appState.tempPolyline);
+        // 使用调色板的当前颜色
         appState.tempPolyline = new BMapGL.Polyline(appState.drawPath, {
-            strokeColor: appState.preColor, strokeWeight: 2
+            strokeColor: appState.currentStyle.color, strokeWeight: 2
         });
         map.addOverlay(appState.tempPolyline);
     }
@@ -343,7 +376,7 @@
         hideHint();
     }
 
-    // ================= 7. 业务逻辑 =================
+    // ================= 6. 保存与分析 =================
     function executeAnalysis(polyX) {
         clearAnalysis(); appState.tempResultData = [];
         if(appState.polygons.length === 0) { prepareSingleSave(polyX); return; }
@@ -365,7 +398,6 @@
             var interPurple = (interTotal && interXC) ? turf.difference(interTotal, interXC) : interTotal;
             if(interPurple) cacheResult(interPurple, "#800080", 0.4, "单侧覆盖", false, 'purple');
             
-            // 计算黄色区域 (新拓展)
             var resE = turf.difference(featX, unionAll);
             if(resE) cacheResult(resE, "yellow", 0.3, "新拓展区", false, 'yellow');
             
@@ -387,11 +419,12 @@
 
     function prepareSingleSave(geoJson) {
         appState.tempResultData = [];
-        cacheResult(geoJson, appState.preColor, 0.5, 'Temp', false, 'single');
+        // 【关键】直接使用用户在工具条选择的颜色和透明度
+        cacheResult(geoJson, appState.currentStyle.color, appState.currentStyle.opacity, 'Temp', false, 'single');
         showModal(false);
     }
 
-    // --- 智能弹窗：根据数据可用性动态更新选项 ---
+    // --- 智能弹窗 ---
     function showModal(isMulti) {
         var modal = document.getElementById('save_modal');
         var colorBox = document.getElementById('color_filter_box');
@@ -399,23 +432,18 @@
 
         if(isMulti) { 
             colorBox.style.display = 'block'; 
-            
-            // 1. 检查数据
             var hasYellow = appState.tempResultData.some(i => i.rawType === 'yellow');
             var hasPurple = appState.tempResultData.some(i => i.rawType === 'purple');
             var hasPink   = appState.tempResultData.some(i => i.rawType === 'pink');
-
-            // 2. 更新选项 (辅助函数)
+            
             updateOption(colorSel, 'yellow', hasYellow, "🟡 新拓展区 (黄色)");
             updateOption(colorSel, 'purple', hasPurple, "🟣 单侧覆盖 (紫色)");
             updateOption(colorSel, 'pink',   hasPink,   "🌸 重叠核心 (淡红)");
             
-            // 3. 自动选中一个有数据的
             if (hasYellow) colorSel.value = 'yellow';
             else if (hasPurple) colorSel.value = 'purple';
             else if (hasPink) colorSel.value = 'pink';
             else colorSel.value = 'all';
-
         } else { 
             colorBox.style.display = 'none'; 
         }
@@ -426,17 +454,11 @@
         modal.style.display = 'block';
     }
 
-    // 更新下拉框选项状态
     function updateOption(sel, val, hasData, label) {
         for (var i=0; i<sel.options.length; i++) {
             if (sel.options[i].value === val) {
-                if (!hasData) {
-                    sel.options[i].text = label + " [无数据]";
-                    sel.options[i].disabled = true;
-                } else {
-                    sel.options[i].text = label;
-                    sel.options[i].disabled = false;
-                }
+                if (!hasData) { sel.options[i].text = label + " [无数据]"; sel.options[i].disabled = true; } 
+                else { sel.options[i].text = label; sel.options[i].disabled = false; }
             }
         }
     }
@@ -479,8 +501,7 @@
         if(choice === 'all' || choice === 'single') toSave = appState.tempResultData;
         else toSave = appState.tempResultData.filter(i => i.rawType === choice);
         
-        // 这里的校验现在更有意义了，因为我们已经预先禁用了无数据的选项
-        if(toSave.length === 0) { alert("无数据 (请检查是否选中了有效区域)"); return; }
+        if(toSave.length === 0) { alert("无数据"); return; }
 
         document.getElementById('save_modal').style.display = 'none';
         appState.isSaving = true;
