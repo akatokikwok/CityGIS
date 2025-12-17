@@ -1,0 +1,20 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden; /* 双重保险，防止水平溢出 */
+  -webkit-font-smoothing: antialiased; /* 让字体在 Mac 下更清晰 */
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 强烈建议加上 box-sizing，这会让你的宽高计算符合人类直觉 */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+}

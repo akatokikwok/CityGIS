@@ -1,0 +1,16 @@
+services:
+  client-temp:
+    build:
+      context: .
+    # 镜像名
+    image: cityscope-client-temp:0.1.0
+    # 容器名
+    container_name: cityscope-client-temp
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/usr/src/app
+      - node_modules:/usr/src/app/node_modules
+    restart: unless-stopped
+volumes:
+  node_modules: {}

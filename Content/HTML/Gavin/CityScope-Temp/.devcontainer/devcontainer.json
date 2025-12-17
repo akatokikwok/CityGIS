@@ -1,0 +1,16 @@
+{
+    "name": "cityscope-temp-devcontainer",
+    "dockerComposeFile": "../docker-compose.yml",
+    "service": "client-temp",
+    "workspaceFolder": "/usr/src/app",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "dbaeumer.vscode-eslint", // 代码风格检查
+                "esbenp.prettier-vscode",  // 代码格式化
+                "vue.volar" // Vue3 支持
+            ]  
+        }
+    },
+    "remoteUser": "node" // 'node' 用户是官方 node 镜像的默认非 root 用户
+}
