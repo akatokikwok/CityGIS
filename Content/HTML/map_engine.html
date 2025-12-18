@@ -5,79 +5,373 @@
     <title>UE5 Map Engine</title>
     <style>
         /* ================= 1. 基础样式 ================= */
-        html, body, #map_container { width: 100%; height: 100%; overflow: hidden; margin: 0; padding: 0; font-family: "微软雅黑"; }
-        .anchorBL, .BMap_cpyCtrl { display: none; } 
+        html, body, #map_container
+        {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            font-family: "微软雅黑";
+        }
 
-        .BMapLabel {
-            background: transparent !important; border: none !important;
-            font-size: 14px !important; font-weight: bold !important;
+        .anchorBL, .BMap_cpyCtrl
+        {
+            display: none;
+        }
+
+        /* 标签样式 */
+        .BMapLabel
+        {
+            background: transparent !important;
+            border: none !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
             text-shadow: 1px 1px 2px black, -1px -1px 2px black;
-            pointer-events: none; 
+            pointer-events: none;
         }
 
         /* ================= 2. 悬浮组件 ================= */
-        #style_toolbox {
-            display: none; position: fixed; top: 20px; right: 20px;
-            background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 9990; width: 220px;
-            backdrop-filter: blur(5px); border: 1px solid #eee;
-        }
-        .tool-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; color: #555; }
-        input[type=color] { border: none; width: 40px; height: 25px; cursor: pointer; background: none; }
-        input[type=range] { width: 100px; cursor: pointer; }
-        .val-display { font-size: 12px; color: #007bff; font-weight: bold; width: 30px; text-align: right; }
-
-        /* 筛选面板 (优化版) */
-        #filter_panel {
-            position: fixed; top: 180px; right: 20px;
-            background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 9990; width: 180px;
-            backdrop-filter: blur(5px); border: 1px solid #eee;
-            max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column;
-        }
-        #filter_panel h4 { margin: 0 0 10px 0; font-size: 14px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-        .filter-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 12px; cursor: pointer; }
-        .filter-item input { margin-right: 8px; cursor: pointer; }
-        .filter-group-title { font-weight: bold; margin-top: 10px; margin-bottom: 5px; font-size: 12px; color: #007bff; border-top: 1px dashed #eee; padding-top: 5px; }
         
-        /* 【新增】筛选操作按钮 */
-        .filter-actions { display: flex; gap: 5px; margin-bottom: 10px; }
-        .filter-btn { flex: 1; padding: 4px; font-size: 10px; border: 1px solid #ccc; background: #f0f0f0; cursor: pointer; border-radius: 4px; }
-        .filter-btn:hover { background: #e0e0e0; }
+        /* 样式工具条 */
+        #style_toolbox
+        {
+            display: none;
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            z-index: 9990;
+            width: 220px;
+            backdrop-filter: blur(5px);
+            border: 1px solid #eee;
+        }
+
+        #style_toolbox h4
+        {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        .tool-row
+        {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        input[type=color]
+        {
+            border: none;
+            width: 40px;
+            height: 25px;
+            cursor: pointer;
+            background: none;
+        }
+
+        input[type=range]
+        {
+            width: 100px;
+            cursor: pointer;
+        }
+
+        .val-display
+        {
+            font-size: 12px;
+            color: #007bff;
+            font-weight: bold;
+            width: 30px;
+            text-align: right;
+        }
+
+        /* 筛选面板 */
+        #filter_panel
+        {
+            position: fixed;
+            top: 180px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            z-index: 9990;
+            width: 180px;
+            backdrop-filter: blur(5px);
+            border: 1px solid #eee;
+            max-height: 60vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #filter_panel h4
+        {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        .filter-item
+        {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .filter-item input
+        {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .filter-group-title
+        {
+            font-weight: bold;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #007bff;
+            border-top: 1px dashed #eee;
+            padding-top: 5px;
+        }
+
+        .filter-actions
+        {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .filter-btn
+        {
+            flex: 1;
+            padding: 4px;
+            font-size: 10px;
+            border: 1px solid #ccc;
+            background: #f0f0f0;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .filter-btn:hover
+        {
+            background: #e0e0e0;
+        }
 
         /* ================= 3. 弹窗样式 ================= */
-        #mode_select_modal {
-            display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
-            z-index: 10000; background: white; width: 320px; padding: 25px;
-            border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center;
+        #mode_select_modal
+        {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            background: white;
+            width: 320px;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
         }
-        .mode-btn { display: block; width: 100%; padding: 15px; margin-bottom: 15px; border: 2px solid #eee; border-radius: 10px; background: #f9f9f9; cursor: pointer; transition: 0.2s; text-align: left; }
-        .mode-btn:hover { border-color: #007bff; background: #eef7ff; }
-        .mode-btn strong { display: block; font-size: 16px; margin-bottom: 4px; color: #333; }
-        .mode-btn span { font-size: 12px; color: #666; }
 
-        #save_modal {
-            display: none; position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%);
-            z-index: 9999; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(12px);
-            width: 280px; padding: 20px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            border: 1px solid #eee; animation: popUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        #mode_select_modal h3
+        {
+            margin: 0 0 20px 0;
+            color: #333;
         }
-        @keyframes popUp { from { bottom: -200px; opacity: 0; } to { bottom: 80px; opacity: 1; } }
-        #save_modal h4 { margin: 0 0 10px 0; font-size: 16px; color: #333; text-align: center; }
-        .input-label { font-size: 12px; color: #666; margin-bottom: 4px; display: block; }
-        select, input[type=text] { width: 100%; padding: 8px; margin-bottom: 12px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 6px; outline: none; font-size: 14px; }
-        #parent_container { display: none; background: #f9f9f9; padding: 8px; border-radius: 6px; margin-bottom: 10px; border: 1px dashed #ccc;}
-        .btn-group { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px;}
-        .btn-group button { flex: 1; padding: 8px; cursor: pointer; border: none; border-radius: 6px; color: white; font-weight: bold; }
-        #btn_confirm { background-color: #007bff; } #btn_confirm:hover { background-color: #0056b3; }
-        #btn_cancel { background-color: #6c757d; } #btn_cancel:hover { background-color: #5a6268; }
-        
-        .checkbox-row { display: flex; align-items: center; justify-content: center; margin-bottom: 12px; padding:8px; background:#f0f8ff; border-radius:6px; cursor: pointer; border:1px dashed #a0cfff;}
-        .checkbox-row input { width: auto; margin-right: 8px; cursor: pointer; }
-        .checkbox-row strong { font-size:13px; color:#0056b3; }
 
-        #hint_bar { display: none; position: fixed; top: 100px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 8px 16px; border-radius: 20px; font-size: 14px; z-index: 9998; pointer-events: none; }
+        .mode-btn
+        {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 2px solid #eee;
+            border-radius: 10px;
+            background: #f9f9f9;
+            cursor: pointer;
+            transition: 0.2s;
+            text-align: left;
+        }
+
+        .mode-btn:hover
+        {
+            border-color: #007bff;
+            background: #eef7ff;
+        }
+
+        .mode-btn strong
+        {
+            display: block;
+            font-size: 16px;
+            margin-bottom: 4px;
+            color: #333;
+        }
+
+        .mode-btn span
+        {
+            font-size: 12px;
+            color: #666;
+        }
+
+        #save_modal
+        {
+            display: none;
+            position: fixed;
+            left: 50%;
+            bottom: 80px;
+            transform: translateX(-50%);
+            z-index: 9999;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(12px);
+            width: 280px;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            border: 1px solid #eee;
+            animation: popUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        }
+
+        @keyframes popUp
+        {
+            from { bottom: -200px; opacity: 0; }
+            to { bottom: 80px; opacity: 1; }
+        }
+
+        #save_modal h4
+        {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #333;
+            text-align: center;
+        }
+
+        .input-label
+        {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        select, input[type=text]
+        {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 12px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            outline: none;
+            font-size: 14px;
+        }
+
+        #parent_container
+        {
+            display: none;
+            background: #f9f9f9;
+            padding: 8px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border: 1px dashed #ccc;
+        }
+
+        .btn-group
+        {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-group button
+        {
+            flex: 1;
+            padding: 8px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-weight: bold;
+        }
+
+        #btn_confirm
+        {
+            background-color: #007bff;
+        }
+
+        #btn_confirm:hover
+        {
+            background-color: #0056b3;
+        }
+
+        #btn_cancel
+        {
+            background-color: #6c757d;
+        }
+
+        #btn_cancel:hover
+        {
+            background-color: #5a6268;
+        }
+
+        .checkbox-row
+        {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #f0f8ff;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 1px dashed #a0cfff;
+        }
+
+        .checkbox-row input
+        {
+            width: auto;
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .checkbox-row strong
+        {
+            font-size: 13px;
+            color: #0056b3;
+        }
+
+        #hint_bar
+        {
+            display: none;
+            position: fixed;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 9998;
+            pointer-events: none;
+        }
     </style>
+    
     <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 </head>
@@ -86,7 +380,7 @@
     <div id="hint_bar">操作提示...</div>
 
     <div id="filter_panel">
-        <h4>🔍 区域筛选</h4>
+        <h4>🔍 区域筛选 (多选)</h4>
         <div class="filter-actions">
             <button class="filter-btn" onclick="selectAllFilters()">✅ 选择所有</button>
             <button class="filter-btn" onclick="clearAllFilters()">❌ 清除所有</button>
@@ -97,100 +391,167 @@
 
     <div id="style_toolbox">
         <h4>🎨 绘图样式板</h4>
-        <div class="tool-row"> <span>填充颜色</span> <input type="color" id="tool_color" value="#3388ff" onchange="updateStyleState()"> </div>
-        <div class="tool-row"> <span>不透明度</span> <input type="range" id="tool_opacity" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateStyleState()"> <span id="opacity_val" class="val-display">0.5</span> </div>
+        <div class="tool-row">
+            <span>填充颜色</span> <input type="color" id="tool_color" value="#3388ff" onchange="updateStyleState()">
+        </div>
+        <div class="tool-row">
+            <span>不透明度</span> <input type="range" id="tool_opacity" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateStyleState()">
+            <span id="opacity_val" class="val-display">0.5</span>
+        </div>
+        <div style="font-size:10px; color:#999; margin-top:5px;">* 绘制时实时生效<br>* WASD 移动地图</div>
     </div>
 
     <div id="mode_select_modal">
         <h3>🛠️ 选择绘制方案</h3>
-        <div class="mode-btn" onclick="startDraw('Freehand')"> <strong>方案一：手绘拖拽</strong> <span>按住左键拖动，松开即闭合。</span> </div>
-        <div class="mode-btn" onclick="startDraw('Polyline')"> <strong>方案二：点对点折线</strong> <span>点击定点，双击闭合。</span> </div>
+        <div class="mode-btn" onclick="startDraw('Freehand')">
+            <strong>方案一：手绘拖拽</strong> <span>按住左键拖动，松开即闭合。</span>
+        </div>
+        <div class="mode-btn" onclick="startDraw('Polyline')">
+            <strong>方案二：点对点折线</strong> <span>点击定点，双击闭合。</span>
+        </div>
         <div style="margin-top:15px; font-size:12px; color:#999; cursor:pointer;" onclick="setMode('browse')">取消返回</div>
     </div>
 
     <div id="save_modal">
         <h4 id="modal_title">区域保存</h4>
-        <label class="checkbox-row"> <input type="checkbox" id="snap_toggle" checked> <strong>🧲 自动吸附贴合 (Snap)</strong> </label>
+        <label class="checkbox-row">
+            <input type="checkbox" id="snap_toggle" checked> <strong>🧲 自动吸附贴合 (Snap)</strong>
+        </label>
 
-        <div id="color_filter_box"> <span class="input-label">分析结果:</span> <select id="color_selector"> <option value="yellow">🟡 新拓展区</option> <option value="purple">🟣 单侧覆盖</option> <option value="pink">🌸 重叠核心</option> <option value="all">💠 所有区域</option> </select> </div>
+        <div id="color_filter_box">
+            <span class="input-label">分析结果:</span>
+            <select id="color_selector">
+                <option value="yellow">🟡 新拓展区</option>
+                <option value="purple">🟣 单侧覆盖</option>
+                <option value="pink">🌸 重叠核心</option>
+                <option value="all">💠 所有区域</option>
+            </select>
+        </div>
         
         <span class="input-label">归属层级:</span> 
         <select id="type_selector" onchange="onTypeChanged()"> 
             <option value="District">1级 - 区镇</option> 
             <option value="Street" selected>2级 - 街道</option> 
             <option value="Community">3级 - 建筑/小区</option> 
-            <option value="Custom">4级 - 自定义区域 (从属街道)</option> <option value="Reconstruct">⚡ 重构图块</option> 
+            <option value="Custom">4级 - 自定义区域 (从属街道)</option> 
+            <option value="Reconstruct">⚡ 重构图块</option> 
         </select>
 
-        <div id="parent_container"> <span class="input-label" id="parent_label">附着到:</span> <select id="parent_selector"><option value="">请选择...</option></select> </div>
+        <div id="parent_container">
+            <span class="input-label" id="parent_label">附着到:</span> <select id="parent_selector"><option value="">请选择...</option></select>
+        </div>
         
         <span class="input-label">自定义标签 (可选):</span> 
         <input type="text" id="poly_tag_input" placeholder="例如: 类目一, 重点区域...">
 
         <span class="input-label">区域名称:</span> <input type="text" id="poly_name_input" placeholder="请输入名称">
-        <div class="btn-group"> <button id="btn_cancel" onclick="closeModal()">丢弃</button> <button id="btn_confirm" onclick="confirmSave()">保存</button> </div>
+        
+        <div class="btn-group">
+            <button id="btn_cancel" onclick="closeModal()">丢弃</button>
+            <button id="btn_confirm" onclick="confirmSave()">保存</button>
+        </div>
     </div>
 
 <script>
-    window.onerror = function(msg, url, line) { console.log("UE_ERROR:JS_Error:" + msg + " Line:" + line); };
-    document.oncontextmenu = function() { return false; }; 
-    
+    // ================= 1. 全局配置 =================
+    window.onerror = function(msg, url, line)
+    {
+        console.log("UE_ERROR:JS_Error:" + msg + " Line:" + line);
+    };
+
+    document.oncontextmenu = function()
+    {
+        return false;
+    };
+
     var map = new BMapGL.Map("map_container");
     map.centerAndZoom(new BMapGL.Point(121.474, 31.233), 17);
-    map.enableScrollWheelZoom(true); map.setTilt(0);
-    const MOVE_SPEED = 15; 
+    map.enableScrollWheelZoom(true);
+    map.setTilt(0);
+    const MOVE_SPEED = 15;
 
-    var appState = {
-        mode: 'browse', drawMethod: 'None', 
-        currentStyle: { color: '#3388ff', opacity: 0.5, textColor: '#ffffff' }, 
-        polygons: [], drawPath: [], tempPolyline: null, tempMouseLine: null,
-        canSnapClose: false, snapHintCircle: null, analysisOverlays: [], tempResultData: [],
-        isSaving: false, isDrawing: false,
-        activeFilters: new Set(['District', 'Street', 'Community', 'Custom', 'Reconstruct']) 
+    var appState =
+    {
+        mode: 'browse',
+        drawMethod: 'None',
+        currentStyle: { color: '#3388ff', opacity: 0.5, textColor: '#ffffff' },
+        polygons: [],
+        drawPath: [],
+        tempPolyline: null,
+        tempMouseLine: null,
+        canSnapClose: false,
+        snapHintCircle: null,
+        analysisOverlays: [],
+        tempResultData: [],
+        isSaving: false,
+        isDrawing: false,
+        activeFilters: new Set(['District', 'Street', 'Community', 'Custom', 'Reconstruct'])
     };
-    var ID_COUNTER = 1; var DEFAULT_NAME_IDX = 1; 
+
+    var ID_COUNTER = 1;
+    var DEFAULT_NAME_IDX = 1;
 
     // ================= 2. 筛选系统 =================
-    function updateFilterUI() {
+    function updateFilterUI()
+    {
         var panel = document.getElementById('filter_list');
-        panel.innerHTML = ""; 
+        panel.innerHTML = "";
 
         var baseTypes = ['District', 'Street', 'Community', 'Custom', 'Reconstruct'];
         var labelMap = {'District':'区镇', 'Street':'街道', 'Community':'小区', 'Custom':'自定义', 'Reconstruct':'重构'};
         
         var group1 = document.createElement('div');
-        group1.className = 'filter-group-title'; group1.innerText = "基础类型";
+        group1.className = 'filter-group-title';
+        group1.innerText = "基础类型";
         panel.appendChild(group1);
 
-        baseTypes.forEach(type => {
+        baseTypes.forEach(type =>
+        {
             createFilterCheckbox(panel, type, labelMap[type], type);
         });
 
         // 收集所有存在的自定义标签
         var allTags = new Set();
-        appState.polygons.forEach(p => {
+        appState.polygons.forEach(p =>
+        {
             var tag = p.geoJson.properties.customTag;
-            if(tag && tag.trim() !== "") allTags.add(tag);
+            if (tag && tag.trim() !== "")
+            {
+                allTags.add(tag);
+            }
         });
 
-        if (allTags.size > 0) {
+        if (allTags.size > 0)
+        {
             var group2 = document.createElement('div');
-            group2.className = 'filter-group-title'; group2.innerText = "自定义标签";
+            group2.className = 'filter-group-title';
+            group2.innerText = "自定义标签";
             panel.appendChild(group2);
-            allTags.forEach(tag => {
-                createFilterCheckbox(panel, tag, tag, 'TAG:' + tag); 
+            allTags.forEach(tag =>
+            {
+                createFilterCheckbox(panel, tag, tag, 'TAG:' + tag);
             });
         }
     }
 
-    function createFilterCheckbox(container, id, labelText, filterKey) {
+    function createFilterCheckbox(container, id, labelText, filterKey)
+    {
         var row = document.createElement('label');
         row.className = 'filter-item';
         var chk = document.createElement('input');
         chk.type = 'checkbox';
         chk.checked = appState.activeFilters.has(id);
-        chk.onchange = function() {
-            if(chk.checked) appState.activeFilters.add(id); else appState.activeFilters.delete(id);
+        
+        chk.onchange = function()
+        {
+            if (chk.checked)
+            {
+                appState.activeFilters.add(id);
+            }
+            else
+            {
+                appState.activeFilters.delete(id);
+            }
             executeMultiFilter();
         };
         row.appendChild(chk);
@@ -198,27 +559,32 @@
         container.appendChild(row);
     }
 
-    // 【新增】全选与清除
-    function selectAllFilters() {
-        // 基础类型
+    function selectAllFilters()
+    {
         ['District', 'Street', 'Community', 'Custom', 'Reconstruct'].forEach(t => appState.activeFilters.add(t));
-        // 动态标签
-        appState.polygons.forEach(p => {
+        appState.polygons.forEach(p =>
+        {
             var tag = p.geoJson.properties.customTag;
-            if(tag) appState.activeFilters.add(tag);
+            if (tag)
+            {
+                appState.activeFilters.add(tag);
+            }
         });
         updateFilterUI();
         executeMultiFilter();
     }
 
-    function clearAllFilters() {
+    function clearAllFilters()
+    {
         appState.activeFilters.clear();
         updateFilterUI();
         executeMultiFilter();
     }
 
-    function executeMultiFilter() {
-        appState.polygons.forEach(p => {
+    function executeMultiFilter()
+    {
+        appState.polygons.forEach(p =>
+        {
             var type = p.geoJson.properties.customType;
             var tag = p.geoJson.properties.customTag;
             
@@ -227,206 +593,640 @@
             var shouldShow = showByType || showByTag;
 
             var ovs = Array.isArray(p.overlay) ? p.overlay : [p.overlay];
-            ovs.forEach(o => { if(shouldShow) o.show(); else o.hide(); });
-            if(p.label) { if(shouldShow) p.label.show(); else p.label.hide(); }
+            ovs.forEach(o =>
+            {
+                if (shouldShow) o.show(); else o.hide();
+            });
+            
+            if (p.label)
+            {
+                if (shouldShow) p.label.show(); else p.label.hide();
+            }
         });
     }
 
     // ================= 3. 状态管理 =================
-    window.updateStyleState = function() {
+    window.updateStyleState = function()
+    {
         var col = document.getElementById('tool_color').value;
         var op = parseFloat(document.getElementById('tool_opacity').value);
         document.getElementById('opacity_val').innerText = op;
-        appState.currentStyle.color = col; appState.currentStyle.opacity = op;
-        if (appState.isDrawing && appState.tempPolyline) appState.tempPolyline.setStrokeColor(col);
+        appState.currentStyle.color = col;
+        appState.currentStyle.opacity = op;
+        if (appState.isDrawing && appState.tempPolyline)
+        {
+            appState.tempPolyline.setStrokeColor(col);
+        }
     };
 
-    window.setMode = function(mode) {
-        appState.mode = mode; closeModal(); clearAnalysis(); clearTemp();
-        appState.isDrawing = false; appState.drawPath = []; appState.drawMethod = 'None'; 
+    window.setMode = function(mode)
+    {
+        appState.mode = mode;
+        closeModal();
+        clearAnalysis();
+        clearTemp();
+        appState.isDrawing = false;
+        appState.drawPath = [];
+        appState.drawMethod = 'None';
         document.getElementById('mode_select_modal').style.display = 'none';
+        
         var toolbox = document.getElementById('style_toolbox');
-        // 编辑模式逻辑
-        if (mode === 'edit') { toolbox.style.display = 'block'; map.disableDragging(); document.getElementById('mode_select_modal').style.display = 'block'; } 
-        else if (mode === 'reconstruct') { toolbox.style.display = 'none'; map.disableDragging(); appState.drawMethod = 'Freehand'; appState.currentStyle = { color: '#800080', opacity: 0.5, textColor: '#ffffff' }; showHint("WASD移动 | 左键手绘 | 重构模式"); }
-        else { toolbox.style.display = 'none'; map.enableDragging(); map.setDefaultCursor("default"); hideHint(); }
-    };
-    window.startDraw = function(method) {
-        appState.drawMethod = method; document.getElementById('mode_select_modal').style.display = 'none'; updateStyleState();
-        if (method === 'Freehand') { showHint("【WASD】移动 | 【左键拖拽】绘制"); map.setDefaultCursor("crosshair"); } 
-        else { showHint("【WASD】移动 | 【左键点击】定点 | 【双击】闭合"); map.setDefaultCursor("crosshair"); }
+        if (mode === 'edit')
+        {
+            toolbox.style.display = 'block';
+            map.disableDragging();
+            document.getElementById('mode_select_modal').style.display = 'block';
+        }
+        else if (mode === 'reconstruct')
+        {
+            toolbox.style.display = 'none';
+            map.disableDragging();
+            appState.drawMethod = 'Freehand';
+            appState.currentStyle = { color: '#800080', opacity: 0.5, textColor: '#ffffff' };
+            showHint("WASD移动 | 左键手绘 | 重构模式");
+        }
+        else
+        {
+            toolbox.style.display = 'none';
+            map.enableDragging();
+            map.setDefaultCursor("default");
+            hideHint();
+        }
     };
 
-    // ... (交互逻辑省略，保持不变) ...
-    var keyState = { w: false, a: false, s: false, d: false }; var isPanningLoopActive = false;
-    document.addEventListener('keydown', function(e) { if(e.target.tagName === 'INPUT') return; var k = e.key.toLowerCase(); if(['w','a','s','d'].includes(k)) { keyState[k] = true; if(!isPanningLoopActive) { isPanningLoopActive=true; panMapLoop(); } } });
-    document.addEventListener('keyup', function(e) { var k = e.key.toLowerCase(); if(['w','a','s','d'].includes(k)) keyState[k] = false; });
-    function panMapLoop() { if (!keyState.w && !keyState.a && !keyState.s && !keyState.d) { isPanningLoopActive = false; return; } var centerPt = map.getCenter(); var centerPx = map.pointToPixel(centerPt); var dx = 0; var dy = 0; if (keyState.w) dy -= MOVE_SPEED; if (keyState.s) dy += MOVE_SPEED; if (keyState.a) dx -= MOVE_SPEED; if (keyState.d) dx += MOVE_SPEED; var newCenterPx = new BMapGL.Pixel(centerPx.x + dx, centerPx.y + dy); var newCenterPt = map.pixelToPoint(newCenterPx); map.setCenter(newCenterPt, { noAnimation: true }); requestAnimationFrame(panMapLoop); }
+    window.startDraw = function(method)
+    {
+        appState.drawMethod = method;
+        document.getElementById('mode_select_modal').style.display = 'none';
+        updateStyleState();
+        if (method === 'Freehand')
+        {
+            showHint("【WASD】移动 | 【左键拖拽】绘制");
+            map.setDefaultCursor("crosshair");
+        }
+        else
+        {
+            showHint("【WASD】移动 | 【左键点击】定点 | 【双击】闭合");
+            map.setDefaultCursor("crosshair");
+        }
+    };
+
+    // ================= 4. 交互逻辑 =================
+    var keyState = { w: false, a: false, s: false, d: false };
+    var isPanningLoopActive = false;
+
+    document.addEventListener('keydown', function(e)
+    {
+        if (e.target.tagName === 'INPUT') return;
+        var k = e.key.toLowerCase();
+        if (['w','a','s','d'].includes(k))
+        {
+            keyState[k] = true;
+            if (!isPanningLoopActive)
+            {
+                isPanningLoopActive = true;
+                panMapLoop();
+            }
+        }
+    });
+
+    document.addEventListener('keyup', function(e)
+    {
+        var k = e.key.toLowerCase();
+        if (['w','a','s','d'].includes(k)) keyState[k] = false;
+    });
+
+    function panMapLoop()
+    {
+        if (!keyState.w && !keyState.a && !keyState.s && !keyState.d)
+        {
+            isPanningLoopActive = false;
+            return;
+        }
+        var centerPt = map.getCenter();
+        var centerPx = map.pointToPixel(centerPt);
+        var dx = 0;
+        var dy = 0;
+        if (keyState.w) dy -= MOVE_SPEED;
+        if (keyState.s) dy += MOVE_SPEED;
+        if (keyState.a) dx -= MOVE_SPEED;
+        if (keyState.d) dx += MOVE_SPEED;
+        
+        var newCenterPx = new BMapGL.Pixel(centerPx.x + dx, centerPx.y + dy);
+        var newCenterPt = map.pixelToPoint(newCenterPx);
+        map.setCenter(newCenterPt, { noAnimation: true });
+        requestAnimationFrame(panMapLoop);
+    }
 
     var container = document.getElementById('map_container');
-    container.addEventListener('mousedown', function(e) { if(appState.mode === 'browse') return; if(e.target.closest('#save_modal') || e.target.closest('#mode_select_modal') || e.target.closest('#style_toolbox') || e.target.closest('#filter_panel')) return; if(e.button !== 0) return; if (appState.drawMethod === 'Freehand') handleFreehandDown(e); else if (appState.drawMethod === 'Polyline') handlePolylineDown(e); });
-    container.addEventListener('mousemove', function(e) { if(appState.mode === 'browse') return; if (appState.drawMethod === 'Freehand') handleFreehandMove(e); else if (appState.drawMethod === 'Polyline') handlePolylineMove(e); });
-    container.addEventListener('mouseup', function(e) { if(appState.mode === 'browse') return; if(e.button !== 0) return; if (appState.drawMethod === 'Freehand') handleFreehandUp(e); });
-    container.addEventListener('dblclick', function(e) { if (appState.mode === 'browse') return; if (appState.drawMethod === 'Polyline') finishPolyline(); });
+    container.addEventListener('mousedown', function(e)
+    {
+        if (appState.mode === 'browse') return;
+        if (e.target.closest('#save_modal') || e.target.closest('#mode_select_modal') || e.target.closest('#style_toolbox') || e.target.closest('#filter_panel')) return;
+        if (e.button !== 0) return;
+        if (appState.drawMethod === 'Freehand') handleFreehandDown(e);
+        else if (appState.drawMethod === 'Polyline') handlePolylineDown(e);
+    });
 
-    function handleFreehandDown(e) { if (!appState.isDrawing) { appState.isDrawing = true; var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY)); appState.drawPath = [pt]; appState.canSnapClose = false; } }
-    function handleFreehandMove(e) { if (appState.isDrawing) { var currentPt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY)); appState.drawPath.push(currentPt); redrawTempPolyline(); checkSnapProximity(currentPt); } }
-    function handleFreehandUp(e) { if (appState.isDrawing) { appState.isDrawing = false; finishDraw(); } }
-    function handlePolylineDown(e) { var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY)); appState.drawPath.push(pt); redrawTempPolyline(); appState.isDrawing = true; }
-    function handlePolylineMove(e) { if (appState.isDrawing && appState.drawPath.length > 0) { var lastPt = appState.drawPath[appState.drawPath.length - 1]; var mousePt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY)); if (appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine); appState.tempMouseLine = new BMapGL.Polyline([lastPt, mousePt], { strokeColor: appState.currentStyle.color, strokeWeight: 2, strokeStyle: 'dashed' }); map.addOverlay(appState.tempMouseLine); } }
-    function finishPolyline() { if (appState.drawPath.length < 3) return; if (appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine); finishDraw(); }
-    function redrawTempPolyline() { if(appState.tempPolyline) map.removeOverlay(appState.tempPolyline); appState.tempPolyline = new BMapGL.Polyline(appState.drawPath, { strokeColor: appState.currentStyle.color, strokeWeight: 2 }); map.addOverlay(appState.tempPolyline); }
-    function checkSnapProximity(currentPt) { if(appState.drawPath.length < 10) return; var startPt = appState.drawPath[0]; var pixStart = map.pointToPixel(new BMapGL.Point(startPt.lng, startPt.lat)); var pixCurrent = map.pointToPixel(new BMapGL.Point(currentPt.lng, currentPt.lat)); var dist = Math.sqrt(Math.pow(pixStart.x - pixCurrent.x, 2) + Math.pow(pixStart.y - pixCurrent.y, 2)); if(dist < 20) { appState.canSnapClose = true; if(!appState.snapHintCircle) { appState.snapHintCircle = new BMapGL.Circle(new BMapGL.Point(startPt.lng, startPt.lat), 5, {strokeColor: "white", strokeWeight: 2, fillColor: "#FFD700", fillOpacity: 0.9}); map.addOverlay(appState.snapHintCircle); } } else { appState.canSnapClose = false; if(appState.snapHintCircle) { map.removeOverlay(appState.snapHintCircle); appState.snapHintCircle = null; } } }
-    function finishDraw() { if(appState.drawPath.length < 3) { clearTemp(); return; } if(appState.canSnapClose) appState.drawPath.push(appState.drawPath[0]); else appState.drawPath.push(appState.drawPath[0]); var coords = appState.drawPath.map(p => [p.lng, p.lat]); var rawGeo = turf.polygon([coords]); var simpleGeo = turf.simplify(rawGeo, {tolerance: 0.00001, highQuality: false}); if(appState.mode === 'edit') prepareSingleSave(simpleGeo); else if(appState.mode === 'reconstruct') executeAnalysis(simpleGeo); clearTemp(); hideHint(); }
+    container.addEventListener('mousemove', function(e)
+    {
+        if (appState.mode === 'browse') return;
+        if (appState.drawMethod === 'Freehand') handleFreehandMove(e);
+        else if (appState.drawMethod === 'Polyline') handlePolylineMove(e);
+    });
 
-    function snapPolygon(inputGeo) {
+    container.addEventListener('mouseup', function(e)
+    {
+        if (appState.mode === 'browse') return;
+        if (e.button !== 0) return;
+        if (appState.drawMethod === 'Freehand') handleFreehandUp(e);
+    });
+
+    container.addEventListener('dblclick', function(e)
+    {
+        if (appState.mode === 'browse') return;
+        if (appState.drawMethod === 'Polyline') finishPolyline();
+    });
+
+    function handleFreehandDown(e)
+    {
+        if (!appState.isDrawing)
+        {
+            appState.isDrawing = true;
+            var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
+            appState.drawPath = [pt];
+            appState.canSnapClose = false;
+        }
+    }
+
+    function handleFreehandMove(e)
+    {
+        if (appState.isDrawing)
+        {
+            var currentPt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
+            appState.drawPath.push(currentPt);
+            redrawTempPolyline();
+            checkSnapProximity(currentPt);
+        }
+    }
+
+    function handleFreehandUp(e)
+    {
+        if (appState.isDrawing)
+        {
+            appState.isDrawing = false;
+            finishDraw();
+        }
+    }
+
+    function handlePolylineDown(e)
+    {
+        var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
+        appState.drawPath.push(pt);
+        redrawTempPolyline();
+        appState.isDrawing = true;
+    }
+
+    function handlePolylineMove(e)
+    {
+        if (appState.isDrawing && appState.drawPath.length > 0)
+        {
+            var lastPt = appState.drawPath[appState.drawPath.length - 1];
+            var mousePt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
+            if (appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine);
+            appState.tempMouseLine = new BMapGL.Polyline([lastPt, mousePt], { strokeColor: appState.currentStyle.color, strokeWeight: 2, strokeStyle: 'dashed' });
+            map.addOverlay(appState.tempMouseLine);
+        }
+    }
+
+    function finishPolyline()
+    {
+        if (appState.drawPath.length < 3) return;
+        if (appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine);
+        finishDraw();
+    }
+
+    function redrawTempPolyline()
+    {
+        if (appState.tempPolyline) map.removeOverlay(appState.tempPolyline);
+        appState.tempPolyline = new BMapGL.Polyline(appState.drawPath, { strokeColor: appState.currentStyle.color, strokeWeight: 2 });
+        map.addOverlay(appState.tempPolyline);
+    }
+
+    function checkSnapProximity(currentPt)
+    {
+        if (appState.drawPath.length < 10) return;
+        var startPt = appState.drawPath[0];
+        var pixStart = map.pointToPixel(new BMapGL.Point(startPt.lng, startPt.lat));
+        var pixCurrent = map.pointToPixel(new BMapGL.Point(currentPt.lng, currentPt.lat));
+        var dist = Math.sqrt(Math.pow(pixStart.x - pixCurrent.x, 2) + Math.pow(pixStart.y - pixCurrent.y, 2));
+        if (dist < 20)
+        {
+            appState.canSnapClose = true;
+            if (!appState.snapHintCircle)
+            {
+                appState.snapHintCircle = new BMapGL.Circle(new BMapGL.Point(startPt.lng, startPt.lat), 5, {strokeColor: "white", strokeWeight: 2, fillColor: "#FFD700", fillOpacity: 0.9});
+                map.addOverlay(appState.snapHintCircle);
+            }
+        }
+        else
+        {
+            appState.canSnapClose = false;
+            if (appState.snapHintCircle)
+            {
+                map.removeOverlay(appState.snapHintCircle);
+                appState.snapHintCircle = null;
+            }
+        }
+    }
+
+    function finishDraw()
+    {
+        if (appState.drawPath.length < 3)
+        {
+            clearTemp();
+            return;
+        }
+        if (appState.canSnapClose) appState.drawPath.push(appState.drawPath[0]);
+        else appState.drawPath.push(appState.drawPath[0]);
+        
+        var coords = appState.drawPath.map(p => [p.lng, p.lat]);
+        var rawGeo = turf.polygon([coords]);
+        var simpleGeo = turf.simplify(rawGeo, {tolerance: 0.00001, highQuality: false});
+        
+        if (appState.mode === 'edit') prepareSingleSave(simpleGeo);
+        else if (appState.mode === 'reconstruct') executeAnalysis(simpleGeo);
+        
+        clearTemp();
+        hideHint();
+    }
+
+    function snapPolygon(inputGeo)
+    {
         var existingPoints = [];
-        appState.polygons.forEach(p => { if (p.geoJson && p.geoJson.geometry) { var coords = turf.coordAll(p.geoJson); existingPoints = existingPoints.concat(coords); } });
+        appState.polygons.forEach(p =>
+        {
+            if (p.geoJson && p.geoJson.geometry)
+            {
+                var coords = turf.coordAll(p.geoJson);
+                existingPoints = existingPoints.concat(coords);
+            }
+        });
+
         if (existingPoints.length === 0) return inputGeo; 
+
         var targetPointsFC = turf.featureCollection(existingPoints.map(c => turf.point(c)));
         var SNAP_THRESHOLD = 0.05; 
         var oldCoords = inputGeo.geometry.coordinates;
-        var newCoords = oldCoords.map(ring => {
+        
+        var newCoords = oldCoords.map(ring =>
+        {
             var ringPoints = [];
-            ring.forEach((ptCoords, idx) => {
+            ring.forEach((ptCoords, idx) =>
+            {
                 var fromPt = turf.point(ptCoords);
                 var nearest = turf.nearestPoint(fromPt, targetPointsFC);
                 var dist = turf.distance(fromPt, nearest); 
                 var finalCoords = ptCoords;
-                if (dist < SNAP_THRESHOLD) { console.log("⚡ 强力吸附! 距离: " + (dist*1000).toFixed(1) + "米"); finalCoords = nearest.geometry.coordinates; }
-                if (ringPoints.length > 0) { var lastPt = ringPoints[ringPoints.length - 1]; if (lastPt[0] === finalCoords[0] && lastPt[1] === finalCoords[1]) return; }
+                
+                if (dist < SNAP_THRESHOLD)
+                {
+                    console.log("⚡ 强力吸附! 距离: " + (dist * 1000).toFixed(1) + "米");
+                    finalCoords = nearest.geometry.coordinates;
+                }
+                
+                if (ringPoints.length > 0)
+                {
+                    var lastPt = ringPoints[ringPoints.length - 1];
+                    if (lastPt[0] === finalCoords[0] && lastPt[1] === finalCoords[1]) return;
+                }
                 ringPoints.push(finalCoords);
             });
-            if (ringPoints.length > 2) { var first = ringPoints[0]; var last = ringPoints[ringPoints.length - 1]; if (first[0] !== last[0] || first[1] !== last[1]) ringPoints.push(first); }
+            
+            if (ringPoints.length > 2)
+            {
+                var first = ringPoints[0];
+                var last = ringPoints[ringPoints.length - 1];
+                if (first[0] !== last[0] || first[1] !== last[1]) ringPoints.push(first);
+            }
             return ringPoints;
         });
+
         var snappedPoly = turf.polygon(newCoords, inputGeo.properties);
         return turf.cleanCoords(snappedPoly);
     }
 
-    function executeAnalysis(polyX) { clearAnalysis(); appState.tempResultData = []; if(appState.polygons.length === 0) { prepareSingleSave(polyX); return; } try { var featX = turf.feature(polyX.geometry); var existFeats = appState.polygons.map(p => turf.feature(p.geoJson.geometry)); var unionC = null; for(let i=0; i<existFeats.length; i++) { for(let j=i+1; j<existFeats.length; j++) { var inter = turf.intersect(existFeats[i], existFeats[j]); if(inter) unionC = unionC ? turf.union(unionC, inter) : inter; } } var interXC = unionC ? turf.intersect(featX, unionC) : null; if(interXC) cacheResult(interXC, "#FFC0CB", 0.6, "重叠核心", false, 'pink'); var unionAll = existFeats[0]; for(let i=1; i<existFeats.length; i++) unionAll = turf.union(unionAll, existFeats[i]); var interTotal = turf.intersect(featX, unionAll); var interPurple = (interTotal && interXC) ? turf.difference(interTotal, interXC) : interTotal; if(interPurple) cacheResult(interPurple, "#800080", 0.4, "单侧覆盖", false, 'purple'); var resE = turf.difference(featX, unionAll); if(resE) cacheResult(resE, "yellow", 0.3, "新拓展区", false, 'yellow'); showModal(true); } catch(e) { console.log("UE_ERROR:" + e.message); alert("分析错误"); } }
-    function cacheResult(geo, col, op, name, line, type) { var geoms = flattenGeo(geo); geoms.forEach(path => { var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4}) : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1}); map.addOverlay(ov); appState.analysisOverlays.push(ov); }); if(!type) type = "Reconstruct"; appState.tempResultData.push({geoJson:geo, color:col, opacity:op, rawType:type, isLine:line}); }
-    function prepareSingleSave(geoJson) { appState.tempResultData = []; cacheResult(geoJson, appState.currentStyle.color, appState.currentStyle.opacity, 'Temp', false, 'single'); showModal(false); }
+    function executeAnalysis(polyX)
+    {
+        clearAnalysis();
+        appState.tempResultData = [];
+        if (appState.polygons.length === 0)
+        {
+            prepareSingleSave(polyX);
+            return;
+        }
+        
+        try
+        {
+            var featX = turf.feature(polyX.geometry);
+            var existFeats = appState.polygons.map(p => turf.feature(p.geoJson.geometry));
+            var unionC = null;
+            
+            for (let i = 0; i < existFeats.length; i++)
+            {
+                for (let j = i + 1; j < existFeats.length; j++)
+                {
+                    var inter = turf.intersect(existFeats[i], existFeats[j]);
+                    if (inter) unionC = unionC ? turf.union(unionC, inter) : inter;
+                }
+            }
+            
+            var interXC = unionC ? turf.intersect(featX, unionC) : null;
+            if (interXC) cacheResult(interXC, "#FFC0CB", 0.6, "重叠核心", false, 'pink');
+            
+            var unionAll = existFeats[0];
+            for (let i = 1; i < existFeats.length; i++) unionAll = turf.union(unionAll, existFeats[i]);
+            
+            var interTotal = turf.intersect(featX, unionAll);
+            var interPurple = (interTotal && interXC) ? turf.difference(interTotal, interXC) : interTotal;
+            if (interPurple) cacheResult(interPurple, "#800080", 0.4, "单侧覆盖", false, 'purple');
+            
+            var resE = turf.difference(featX, unionAll);
+            if (resE) cacheResult(resE, "yellow", 0.3, "新拓展区", false, 'yellow');
+            
+            showModal(true);
+        }
+        catch (e)
+        {
+            console.log("UE_ERROR:" + e.message);
+            alert("分析错误");
+        }
+    }
+
+    function cacheResult(geo, col, op, name, line, type)
+    {
+        var geoms = flattenGeo(geo);
+        geoms.forEach(path =>
+        {
+            var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4}) : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1});
+            map.addOverlay(ov);
+            appState.analysisOverlays.push(ov);
+        });
+        
+        if (!type) type = "Reconstruct";
+        appState.tempResultData.push({geoJson:geo, color:col, opacity:op, rawType:type, isLine:line});
+    }
+
+    function prepareSingleSave(geoJson)
+    {
+        appState.tempResultData = [];
+        cacheResult(geoJson, appState.currentStyle.color, appState.currentStyle.opacity, 'Temp', false, 'single');
+        showModal(false);
+    }
     
-    function showModal(isMulti) { 
-        var modal = document.getElementById('save_modal'); var colorBox = document.getElementById('color_filter_box'); var colorSel = document.getElementById('color_selector'); 
-        document.getElementById('poly_tag_input').value = ""; 
-        if(isMulti) { 
-            colorBox.style.display = 'block'; 
+    function showModal(isMulti)
+    {
+        var modal = document.getElementById('save_modal');
+        var colorBox = document.getElementById('color_filter_box');
+        var colorSel = document.getElementById('color_selector');
+        
+        document.getElementById('poly_tag_input').value = "";
+        
+        if (isMulti)
+        {
+            colorBox.style.display = 'block';
             var hasYellow = appState.tempResultData.some(i => i.rawType === 'yellow');
             var hasPurple = appState.tempResultData.some(i => i.rawType === 'purple');
             var hasPink = appState.tempResultData.some(i => i.rawType === 'pink');
+            
             updateOption(colorSel, 'yellow', hasYellow, "🟡 新拓展区");
             updateOption(colorSel, 'purple', hasPurple, "🟣 单侧覆盖");
             updateOption(colorSel, 'pink', hasPink, "🌸 重叠核心");
-            if (hasYellow) colorSel.value = 'yellow'; else if (hasPurple) colorSel.value = 'purple'; else if (hasPink) colorSel.value = 'pink'; else colorSel.value = 'all'; 
-        } else { colorBox.style.display = 'none'; } 
-        document.getElementById('poly_name_input').value = "我的区域" + DEFAULT_NAME_IDX; 
-        document.getElementById('type_selector').value = 'Street'; 
-        onTypeChanged(); 
-        modal.style.display = 'block'; 
+            
+            if (hasYellow) colorSel.value = 'yellow';
+            else if (hasPurple) colorSel.value = 'purple';
+            else if (hasPink) colorSel.value = 'pink';
+            else colorSel.value = 'all';
+        }
+        else
+        {
+            colorBox.style.display = 'none';
+        }
+        
+        document.getElementById('poly_name_input').value = "我的区域" + DEFAULT_NAME_IDX;
+        document.getElementById('type_selector').value = 'Street';
+        onTypeChanged();
+        modal.style.display = 'block';
     }
-    function updateOption(sel, val, hasData, label) { for (var i=0; i<sel.options.length; i++) { if (sel.options[i].value === val) { if (!hasData) { sel.options[i].text = label + " [无数据]"; sel.options[i].disabled = true; } else { sel.options[i].text = label; sel.options[i].disabled = false; } } } }
-    function closeModal() { document.getElementById('save_modal').style.display = 'none'; clearAnalysis(); }
+
+    function updateOption(sel, val, hasData, label)
+    {
+        for (var i = 0; i < sel.options.length; i++)
+        {
+            if (sel.options[i].value === val)
+            {
+                if (!hasData)
+                {
+                    sel.options[i].text = label + " [无数据]";
+                    sel.options[i].disabled = true;
+                }
+                else
+                {
+                    sel.options[i].text = label;
+                    sel.options[i].disabled = false;
+                }
+            }
+        }
+    }
+
+    function closeModal()
+    {
+        document.getElementById('save_modal').style.display = 'none';
+        clearAnalysis();
+    }
     
-    // 【修改】Custom 类型的层级逻辑
-    window.onTypeChanged = function() { 
-        var type = document.getElementById('type_selector').value; 
-        var parentContainer = document.getElementById('parent_container'); 
-        var parentSelector = document.getElementById('parent_selector'); 
-        parentSelector.innerHTML = '<option value="">请选择...</option>'; 
-        var targetParentType = ""; 
+    window.onTypeChanged = function()
+    {
+        var type = document.getElementById('type_selector').value;
+        var parentContainer = document.getElementById('parent_container');
+        var parentSelector = document.getElementById('parent_selector');
+        parentSelector.innerHTML = '<option value="">请选择...</option>';
+        var targetParentType = "";
         
-        if (type === 'District') { parentContainer.style.display = 'none'; return; } 
-        else if (type === 'Street') { targetParentType = 'District'; } 
-        else if (type === 'Community') { targetParentType = 'Street'; } 
-        // 【关键】Custom 也属于 Street
-        else if (type === 'Custom') { targetParentType = 'Street'; } 
-        else { parentContainer.style.display = 'none'; return; } 
+        if (type === 'District')
+        {
+            parentContainer.style.display = 'none';
+            return;
+        }
+        else if (type === 'Street')
+        {
+            targetParentType = 'District';
+        }
+        else if (type === 'Community')
+        {
+            targetParentType = 'Street';
+        }
+        else if (type === 'Custom')
+        {
+            targetParentType = 'Street';
+        }
+        else
+        {
+            parentContainer.style.display = 'none';
+            return;
+        }
         
-        parentContainer.style.display = 'block'; 
-        var parents = appState.polygons.filter(p => p.geoJson.properties.customType === targetParentType); 
-        if (parents.length === 0) { var opt = document.createElement('option'); opt.text = "⚠️ 暂无上级数据"; opt.disabled = true; opt.selected = true; parentSelector.add(opt); } 
-        else { parents.forEach(p => { var opt = document.createElement('option'); opt.value = p.geoJson.properties.id; opt.text = p.geoJson.properties.name; parentSelector.add(opt); }); } 
+        parentContainer.style.display = 'block';
+        var parents = appState.polygons.filter(p => p.geoJson.properties.customType === targetParentType);
+        
+        if (parents.length === 0)
+        {
+            var opt = document.createElement('option');
+            opt.text = "⚠️ 暂无上级数据";
+            opt.disabled = true;
+            opt.selected = true;
+            parentSelector.add(opt);
+        }
+        else
+        {
+            parents.forEach(p =>
+            {
+                var opt = document.createElement('option');
+                opt.value = p.geoJson.properties.id;
+                opt.text = p.geoJson.properties.name;
+                parentSelector.add(opt);
+            });
+        }
     };
     
-    window.confirmSave = function() { 
-        if(appState.isSaving) return; 
-        var nameInput = document.getElementById('poly_name_input').value || "未命名"; 
-        var selectedType = document.getElementById('type_selector').value; 
-        var parentId = ""; 
-        // 【修改】Custom 也许要父级
-        if (selectedType === 'Street' || selectedType === 'Community' || selectedType === 'Custom') { 
-            var pSel = document.getElementById('parent_selector'); 
-            parentId = pSel.value; 
-            if (!parentId) { alert("请选择隶属的父级区域！"); return; } 
-        } 
-        if(nameInput === "我的区域" + DEFAULT_NAME_IDX) { DEFAULT_NAME_IDX++; } 
-        var colorSel = document.getElementById('color_selector'); 
-        var choice = (document.getElementById('color_filter_box').style.display === 'none') ? 'single' : colorSel.value; 
-        var toSave = []; 
-        if(choice === 'all' || choice === 'single') toSave = appState.tempResultData; 
-        else toSave = appState.tempResultData.filter(i => i.rawType === choice); 
-        if(toSave.length === 0) { alert("无数据"); return; } 
+    window.confirmSave = function()
+    {
+        if (appState.isSaving) return;
+        
+        var nameInput = document.getElementById('poly_name_input').value || "未命名";
+        var selectedType = document.getElementById('type_selector').value;
+        var parentId = "";
+        
+        if (selectedType === 'Street' || selectedType === 'Community' || selectedType === 'Custom')
+        {
+            var pSel = document.getElementById('parent_selector');
+            parentId = pSel.value;
+            if (!parentId)
+            {
+                alert("请选择隶属的父级区域！");
+                return;
+            }
+        }
+        
+        if (nameInput === "我的区域" + DEFAULT_NAME_IDX)
+        {
+            DEFAULT_NAME_IDX++;
+        }
+        
+        var colorSel = document.getElementById('color_selector');
+        var choice = (document.getElementById('color_filter_box').style.display === 'none') ? 'single' : colorSel.value;
+        
+        var toSave = [];
+        if (choice === 'all' || choice === 'single') toSave = appState.tempResultData;
+        else toSave = appState.tempResultData.filter(i => i.rawType === choice);
+        
+        if (toSave.length === 0)
+        {
+            alert("无数据");
+            return;
+        }
         
         var tagInput = document.getElementById('poly_tag_input').value.trim();
-
         var isSnapEnabled = document.getElementById('snap_toggle').checked;
-        if (isSnapEnabled) {
-            toSave.forEach((item) => {
-                try { if (item.geoJson.geometry.type === 'Polygon') { item.geoJson = snapPolygon(item.geoJson); } } catch(e) {}
+        
+        if (isSnapEnabled)
+        {
+            toSave.forEach((item) =>
+            {
+                try
+                {
+                    if (item.geoJson.geometry.type === 'Polygon')
+                    {
+                        item.geoJson = snapPolygon(item.geoJson);
+                    }
+                }
+                catch (e) {}
             });
         }
 
-        document.getElementById('save_modal').style.display = 'none'; 
-        appState.isSaving = true; 
-        processSaveQueue(toSave, nameInput, selectedType, parentId, tagInput, 0); 
+        document.getElementById('save_modal').style.display = 'none';
+        appState.isSaving = true;
+        processSaveQueue(toSave, nameInput, selectedType, parentId, tagInput, 0);
     };
 
-    function processSaveQueue(list, baseName, typeStr, pid, tag, index) { 
-        if(index >= list.length) { appState.tempResultData = []; appState.isSaving = false; return; } 
-        var item = list[index]; 
-        var finalName = (list.length > 1) ? (baseName + "_" + item.rawType + "_" + (index+1)) : baseName; 
+    function processSaveQueue(list, baseName, typeStr, pid, tag, index)
+    {
+        if (index >= list.length)
+        {
+            appState.tempResultData = [];
+            appState.isSaving = false;
+            return;
+        }
+        var item = list[index];
+        var finalName = (list.length > 1) ? (baseName + "_" + item.rawType + "_" + (index + 1)) : baseName;
         var txtColorToSave = appState.currentStyle.textColor || '#ffffff';
-        addPermanent(item.geoJson, item.color, item.opacity, item.isLine, finalName, typeStr, pid, txtColorToSave, tag); 
-        setTimeout(function() { processSaveQueue(list, baseName, typeStr, pid, tag, index + 1); }, 300); 
+        
+        addPermanent(item.geoJson, item.color, item.opacity, item.isLine, finalName, typeStr, pid, txtColorToSave, tag);
+        
+        setTimeout(function()
+        {
+            processSaveQueue(list, baseName, typeStr, pid, tag, index + 1);
+        }, 300);
     }
     
-    function addPermanent(geo, col, op, line, name, typeStr, parentId, txtCol, tag) {
+    function addPermanent(geo, col, op, line, name, typeStr, parentId, txtCol, tag)
+    {
         var id = 'poly_' + (ID_COUNTER++);
-        if(!parentId) parentId = "None"; 
-        if(!txtCol) txtCol = "yellow"; 
-        if(!tag) tag = "";
+        if (!parentId) parentId = "None";
+        if (!txtCol) txtCol = "yellow";
+        if (!tag) tag = "";
 
-        geo.properties = { 
-            id: id, name: name, svCol: col, svOp: op, svLine: line, 
-            customType: typeStr, pid: parentId, svTxtCol: txtCol,
-            customTag: tag 
+        geo.properties = {
+            id: id,
+            name: name,
+            svCol: col,
+            svOp: op,
+            svLine: line,
+            customType: typeStr,
+            pid: parentId,
+            svTxtCol: txtCol,
+            customTag: tag
         };
         
         var polygonOverlays = [];
         var geoms = flattenGeo(geo);
         
-        geoms.forEach(path => {
-            var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4, strokeOpacity:op}) 
-                          : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1});
+        geoms.forEach(path =>
+        {
+            var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4, strokeOpacity:op}) : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1});
             ov.addEventListener('click', function(){ window.focusPoly(id); });
-            ov.customData = { id: id, type: typeStr, tag: tag }; 
+            ov.customData = { id: id, type: typeStr, tag: tag };
             map.addOverlay(ov);
             polygonOverlays.push(ov);
         });
 
         var label = null;
-        try {
+        try
+        {
             var center = turf.centerOfMass(geo).geometry.coordinates;
             var labelPt = new BMapGL.Point(center[0], center[1]);
             label = new BMapGL.Label(name, { position: labelPt, offset: new BMapGL.Size(-20, -10) });
             label.setStyle({
-                color: txtCol, backgroundColor: "transparent", border: "none",
-                fontSize: "14px", fontWeight: "bold", textShadow: "1px 1px 2px black"
+                color: txtCol,
+                backgroundColor: "transparent",
+                border: "none",
+                fontSize: "14px",
+                fontWeight: "bold",
+                textShadow: "1px 1px 2px black"
             });
             map.addOverlay(label);
-        } catch(e) { }
+        }
+        catch (e) { }
 
         appState.polygons.push({ overlay: polygonOverlays, label: label, geoJson: geo });
         
@@ -436,15 +1236,162 @@
         console.log("UE_ADD:" + id + "|" + name + "|" + typeStr + "|" + parentId + "|" + col + "|" + op + "|" + txtCol + "|" + tag + "|" + randomTag);
     }
 
-    // ... 
-    window.updatePolyAttributes = function(id, newName, newColor, newOpacity, newTxtCol) { var target = appState.polygons.find(p => p.geoJson.properties.id === id); if (!target) return; target.geoJson.properties.name = newName; target.geoJson.properties.svCol = newColor; target.geoJson.properties.svOp = newOpacity; target.geoJson.properties.svTxtCol = newTxtCol; var ovs = Array.isArray(target.overlay) ? target.overlay : [target.overlay]; ovs.forEach(o => { if (o instanceof BMapGL.Polygon) { o.setFillColor(newColor); o.setStrokeColor(newColor); o.setFillOpacity(parseFloat(newOpacity)); } else if (o instanceof BMapGL.Polyline) { o.setStrokeColor(newColor); o.setStrokeOpacity(parseFloat(newOpacity)); } }); if (target.label) { target.label.setContent(newName); target.label.setStyle({ color: newTxtCol }); } };
-    window.deletePoly = function(id) { var targets = appState.polygons.filter(p => p.geoJson.properties.id === id); if(targets.length > 0) { targets.forEach(t => { var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay]; ovs.forEach(o => map.removeOverlay(o)); if(t.label) map.removeOverlay(t.label); }); appState.polygons = appState.polygons.filter(p => p.geoJson.properties.id !== id); console.log("UE_LOG: Deleted poly " + id); updateFilterUI(); } };
-    window.clearTemp = function() { appState.drawPath=[]; if(appState.tempPolyline) map.removeOverlay(appState.tempPolyline); if(appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine); if(appState.snapHintCircle) { map.removeOverlay(appState.snapHintCircle); appState.snapHintCircle = null; } appState.canSnapClose = false; appState.isDrawing = false; }
-    window.exportMap = function(fname) { var data = appState.polygons.map(p => p.geoJson); console.log("UE_SAVE:" + fname + "|" + JSON.stringify(data)); };
-    window.importMap = function(json) { map.clearOverlays(); appState.polygons=[]; var list = JSON.parse(json); list.forEach((g, i) => { var p = g.properties; setTimeout(() => addPermanent(g, p.svCol, p.svOp, p.svLine, p.name, p.customType, p.pid, p.svTxtCol, p.customTag), i * 50); }); };
-    function flattenGeo(geo) { var coords = []; if(!geo || !geo.geometry) return []; var type = geo.geometry.type; if(type === 'MultiPolygon') coords = geo.geometry.coordinates.map(c=>c[0]); else if(type === 'Polygon') coords = [geo.geometry.coordinates[0]]; else if(type === 'LineString') coords = [geo.geometry.coordinates]; else if(type === 'MultiLineString') coords = geo.geometry.coordinates; var res = []; coords.forEach(c => { if(c) res.push(c.map(p => new BMapGL.Point(p[0], p[1]))); }); return res; }
-    function clearAnalysis() { appState.analysisOverlays.forEach(o=>map.removeOverlay(o)); appState.analysisOverlays=[]; appState.tempResultData=[]; }
-    window.focusPoly = function(id) { var targets = appState.polygons.filter(p => p.geoJson.properties.id === id); if(targets.length > 0) { var allPoints = []; targets.forEach(t => { var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay]; ovs.forEach(o => { var path = o.getPath(); if(path) allPoints = allPoints.concat(path); var oldColor = o.getStrokeColor(); o.setStrokeColor("red"); o.setStrokeWeight(4); setTimeout(() => { o.setStrokeColor(oldColor); o.setStrokeWeight(1); }, 1000); }); }); if(allPoints.length > 0) { map.setViewport(allPoints, { margins: [60, 60, 60, 300], enableAnimation: true, zoomFactor: 0 }); } } else { console.log("UE_ERROR: Not found " + id); } };
+    // --- Helpers ---
+    function showHint(text)
+    {
+        var bar = document.getElementById('hint_bar');
+        if (bar)
+        {
+            bar.innerText = text;
+            bar.style.display = 'block';
+        }
+    }
+
+    function hideHint()
+    {
+        var bar = document.getElementById('hint_bar');
+        if (bar) bar.style.display = 'none';
+    }
+
+    window.updatePolyAttributes = function(id, newName, newColor, newOpacity, newTxtCol)
+    {
+        var target = appState.polygons.find(p => p.geoJson.properties.id === id);
+        if (!target) return;
+        
+        target.geoJson.properties.name = newName;
+        target.geoJson.properties.svCol = newColor;
+        target.geoJson.properties.svOp = newOpacity;
+        target.geoJson.properties.svTxtCol = newTxtCol;
+        
+        var ovs = Array.isArray(target.overlay) ? target.overlay : [target.overlay];
+        ovs.forEach(o =>
+        {
+            if (o instanceof BMapGL.Polygon)
+            {
+                o.setFillColor(newColor);
+                o.setStrokeColor(newColor);
+                o.setFillOpacity(parseFloat(newOpacity));
+            }
+            else if (o instanceof BMapGL.Polyline)
+            {
+                o.setStrokeColor(newColor);
+                o.setStrokeOpacity(parseFloat(newOpacity));
+            }
+        });
+        
+        if (target.label)
+        {
+            target.label.setContent(newName);
+            target.label.setStyle({ color: newTxtCol });
+        }
+    };
+
+    window.deletePoly = function(id)
+    {
+        var targets = appState.polygons.filter(p => p.geoJson.properties.id === id);
+        if (targets.length > 0)
+        {
+            targets.forEach(t =>
+            {
+                var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay];
+                ovs.forEach(o => map.removeOverlay(o));
+                if (t.label) map.removeOverlay(t.label);
+            });
+            appState.polygons = appState.polygons.filter(p => p.geoJson.properties.id !== id);
+            console.log("UE_LOG: Deleted poly " + id);
+            updateFilterUI();
+        }
+    };
+
+    window.clearTemp = function()
+    {
+        appState.drawPath = [];
+        if (appState.tempPolyline) map.removeOverlay(appState.tempPolyline);
+        if (appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine);
+        if (appState.snapHintCircle)
+        {
+            map.removeOverlay(appState.snapHintCircle);
+            appState.snapHintCircle = null;
+        }
+        appState.canSnapClose = false;
+        appState.isDrawing = false;
+    };
+
+    window.exportMap = function(fname)
+    {
+        var data = appState.polygons.map(p => p.geoJson);
+        console.log("UE_SAVE:" + fname + "|" + JSON.stringify(data));
+    };
+
+    window.importMap = function(json)
+    {
+        map.clearOverlays();
+        appState.polygons = [];
+        var list = JSON.parse(json);
+        list.forEach((g, i) =>
+        {
+            var p = g.properties;
+            setTimeout(() => addPermanent(g, p.svCol, p.svOp, p.svLine, p.name, p.customType, p.pid, p.svTxtCol, p.customTag), i * 50);
+        });
+    };
+
+    function flattenGeo(geo)
+    {
+        var coords = [];
+        if (!geo || !geo.geometry) return [];
+        var type = geo.geometry.type;
+        if (type === 'MultiPolygon') coords = geo.geometry.coordinates.map(c => c[0]);
+        else if (type === 'Polygon') coords = [geo.geometry.coordinates[0]];
+        else if (type === 'LineString') coords = [geo.geometry.coordinates];
+        else if (type === 'MultiLineString') coords = geo.geometry.coordinates;
+        var res = [];
+        coords.forEach(c =>
+        {
+            if (c) res.push(c.map(p => new BMapGL.Point(p[0], p[1])));
+        });
+        return res;
+    }
+
+    function clearAnalysis()
+    {
+        appState.analysisOverlays.forEach(o => map.removeOverlay(o));
+        appState.analysisOverlays = [];
+        appState.tempResultData = [];
+    }
+
+    window.focusPoly = function(id)
+    {
+        var targets = appState.polygons.filter(p => p.geoJson.properties.id === id);
+        if (targets.length > 0)
+        {
+            var allPoints = [];
+            targets.forEach(t =>
+            {
+                var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay];
+                ovs.forEach(o =>
+                {
+                    var path = o.getPath();
+                    if (path) allPoints = allPoints.concat(path);
+                    var oldColor = o.getStrokeColor();
+                    o.setStrokeColor("red");
+                    o.setStrokeWeight(4);
+                    setTimeout(() =>
+                    {
+                        o.setStrokeColor(oldColor);
+                        o.setStrokeWeight(1);
+                    }, 1000);
+                });
+            });
+            if (allPoints.length > 0)
+            {
+                map.setViewport(allPoints, { margins: [60, 60, 60, 300], enableAnimation: true, zoomFactor: 0 });
+            }
+        }
+        else
+        {
+            console.log("UE_ERROR: Not found " + id);
+        }
+    };
     
     updateFilterUI();
 </script>

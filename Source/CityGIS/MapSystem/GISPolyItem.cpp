@@ -14,7 +14,7 @@ void UGISPolyItem::NativeConstruct()
 }
 
 void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FString InParentID, FString InColor,
-                             float InOpacity, FString InTextColor, FString InTag, UGISWebWidget* InMainUI)
+							 float InOpacity, FString InTextColor, FString InTag, UGISWebWidget* InMainUI)
 {
 	this->ItemID = InID;
 	this->ItemName = InName;
@@ -24,58 +24,58 @@ void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FStri
 	this->ItemTextColor = InTextColor;
 	this->MainUI = InMainUI;
 	this->ItemTag = InTag;
-	// 1. 保存标签
 
 	if (Txt_Name) Txt_Name->SetText(FText::FromString(InName));
 
-	// 2. 设置类型文本、背景色和缩进
+	// --- 1. 确定显示名称和样式 ---
+	FString DisplayType = InType;
 	FLinearColor BgColor = FLinearColor::Gray;
 	float Indent = 0.0f;
-	FString DisplayType = InType;
 
 	if (InType == "District")
 	{
+		DisplayType = TEXT("区镇");
 		BgColor = FLinearColor(0.8f, 0.1f, 0.1f, 0.6f); // 红
 		Indent = 0.0f;
-		DisplayType = TEXT("区镇");
 	}
 	else if (InType == "Street")
 	{
+		DisplayType = TEXT("街道");
 		BgColor = FLinearColor(0.1f, 0.1f, 0.8f, 0.6f); // 蓝
 		Indent = 30.0f;
-		DisplayType = TEXT("街道");
 	}
 	else if (InType == "Community")
 	{
+		DisplayType = TEXT("小区");
 		BgColor = FLinearColor(0.1f, 0.6f, 0.1f, 0.6f); // 绿
 		Indent = 60.0f;
-		DisplayType = TEXT("小区");
 	}
 	else if (InType == "Reconstruct")
 	{
+		DisplayType = TEXT("重构");
 		BgColor = FLinearColor(0.5f, 0.0f, 0.5f, 0.6f); // 紫
 		Indent = 0.0f;
-		DisplayType = TEXT("重构");
 	}
-	else if (InType == "Custom") // 3. 新增自定义类型样式
+	else if (InType == "Custom")
 	{
-		BgColor = FLinearColor(0.0f, 0.5f, 0.5f, 0.6f); // 青色 (区分)
-		Indent = 60.0f; // 缩进与小区一致 (因为属于街道)
 		DisplayType = TEXT("自定义");
-
-		// 如果有标签，显示为 "自定义 | 标签名"
-		if (!InTag.IsEmpty())
-		{
-			DisplayType += TEXT(" | ") + InTag;
-		}
+		BgColor = FLinearColor(0.0f, 0.5f, 0.5f, 0.6f); // 青
+		Indent = 60.0f; // 缩进同小区
 	}
 
+	// --- 2. 【核心修复】统一追加标签 ---
+	// 无论是什么类型，只要有 Tag，就显示出来
+	if (!InTag.IsEmpty())
+	{
+		DisplayType += TEXT(" | ") + InTag;
+	}
+
+	// --- 3. 应用到 UI ---
 	if (Txt_Type) Txt_Type->SetText(FText::FromString(DisplayType));
 
-	// 4. 应用缩进
 	if (Content_Border)
 	{
-		Content_Border->SetBrushColor(BgColor);
+		// Content_Border->SetBrushColor(BgColor);
 		Content_Border->SetPadding(FMargin(Indent, 2.0f, 0.0f, 2.0f));
 	}
 }
