@@ -134,7 +134,8 @@ private:
 	void HandleConsoleMessage(const FString& Message, const FString& Source, int32 Line);
 
 	// 核心：处理新条目创建和层级挂载
-	void ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color, float Opacity); // 更新参数
+	// 修改函数声明，增加 Tag 参数
+	void ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color, float Opacity, FString TextColor, FString Tag);
 
 	// 内部函数：当滑块变动时更新 Hex 和 预览
 	UFUNCTION() void OnColorSliderChanged(float Value);

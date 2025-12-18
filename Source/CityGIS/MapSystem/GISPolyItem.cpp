@@ -14,7 +14,7 @@ void UGISPolyItem::NativeConstruct()
 }
 
 void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FString InParentID, FString InColor,
-                             float InOpacity, UGISWebWidget* InMainUI)
+                             float InOpacity, FString InTextColor, FString InTag, UGISWebWidget* InMainUI)
 {
 	this->ItemID = InID;
 	this->ItemName = InName;
@@ -22,9 +22,19 @@ void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FStri
 	this->ItemColor = InColor;
 	this->ItemOpacity = InOpacity;
 	this->MainUI = InMainUI;
+	this->ItemTag = InTag;
 
-	if (Txt_Name) Txt_Name->SetText(FText::FromString(InName));
-	if (Txt_Type) Txt_Type->SetText(FText::FromString(InType)); // 比如显示 "街道"
+	if (Txt_Name)
+		Txt_Name->SetText(FText::FromString(InName));
+
+	if (Txt_Type)
+		Txt_Type->SetText(FText::FromString(InType)); // 比如显示 "街道"
+
+	// 如果是自定义区域，可以在 UI 上显示一下 Tag (可选)
+	if (InType == "Custom" && !InTag.IsEmpty() && Txt_Type)
+	{
+		Txt_Type->SetText(FText::FromString(InTag)); // 用 Tag 替换类型显示
+	}
 
 	// 设置类型文本和颜色/缩进
 	FLinearColor BgColor = FLinearColor::Gray;
@@ -80,14 +90,15 @@ void UGISPolyItem::UpdateData(FString NewName, FString NewColor, float NewOpacit
 	this->ItemOpacity = NewOpacity;
 
 	// 2. 【核心修复】立即更新 UI 上的文字
-	if (Txt_Name) 
+	if (Txt_Name)
 	{
 		Txt_Name->SetText(FText::FromString(NewName));
 	}
 
 	// (可选) 如果你希望列表项的背景色也跟着变，可以在这里写：
-	if (Content_Border) {
-	    Content_Border->SetBrushColor(FLinearColor::FromSRGBColor(FColor::FromHex(NewColor)));
+	if (Content_Border)
+	{
+		Content_Border->SetBrushColor(FLinearColor::FromSRGBColor(FColor::FromHex(NewColor)));
 	}
 }
 

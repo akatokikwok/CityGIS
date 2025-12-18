@@ -114,7 +114,8 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 		TArray<FString> Parts;
 		Content.ParseIntoArray(Parts, TEXT("|"), false);
 
-		if (Parts.Num() >= 7) // 至少要有7个部分
+		// 【关键】现在有 9 个部分
+		if (Parts.Num() >= 9) 
 		{
 			FString ID = Parts[0];
 			FString Name = Parts[1];
@@ -122,13 +123,16 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 			FString ParentID = Parts[3];
 			FString Color = Parts[4];
 			float Opacity = FCString::Atof(*Parts[5]);
+			FString TextColor = Parts[6];
+			FString Tag = Parts[7]; // 新增 Tag
 
 			// ID 查重 (保持不变)
 			if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase)) return;
 			LastProcessedID = ID;
 
 			// 调用 C++ 内部函数构建 UI
-			ProcessAddPolyItem(ID, Name, Type, ParentID, Color, Opacity);
+			// 调用处理函数 (你需要修改这个函数的签名)
+			ProcessAddPolyItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag);
 
 			if (OnAddPolyItemDelegate.IsBound())
 			{
@@ -140,8 +144,7 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 }
 
 // 核心：C++ 构建树状 UI
-void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color,
-                                       float Opacity) // 更新参数
+void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color, float Opacity, FString TextColor, FString Tag)
 {
 	if (!PolyItemClass)
 	{
@@ -155,7 +158,7 @@ void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, F
 
 	// 2. 初始化数据
 	// 传入新参数
-	NewItem->SetupItem(ID, Name, Type, ParentID, Color, Opacity, this);
+	NewItem->SetupItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag, this);
 
 	// 3. 存入字典
 	WidgetMap.Add(ID, NewItem);
