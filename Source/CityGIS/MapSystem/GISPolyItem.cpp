@@ -21,55 +21,61 @@ void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FStri
 	this->ItemType = InType;
 	this->ItemColor = InColor;
 	this->ItemOpacity = InOpacity;
+	this->ItemTextColor = InTextColor;
 	this->MainUI = InMainUI;
 	this->ItemTag = InTag;
+	// 1. 保存标签
 
-	if (Txt_Name)
-		Txt_Name->SetText(FText::FromString(InName));
+	if (Txt_Name) Txt_Name->SetText(FText::FromString(InName));
 
-	if (Txt_Type)
-		Txt_Type->SetText(FText::FromString(InType)); // 比如显示 "街道"
-
-	// 如果是自定义区域，可以在 UI 上显示一下 Tag (可选)
-	if (InType == "Custom" && !InTag.IsEmpty() && Txt_Type)
-	{
-		Txt_Type->SetText(FText::FromString(InTag)); // 用 Tag 替换类型显示
-	}
-
-	// 设置类型文本和颜色/缩进
+	// 2. 设置类型文本、背景色和缩进
 	FLinearColor BgColor = FLinearColor::Gray;
 	float Indent = 0.0f;
+	FString DisplayType = InType;
 
 	if (InType == "District")
 	{
 		BgColor = FLinearColor(0.8f, 0.1f, 0.1f, 0.6f); // 红
 		Indent = 0.0f;
-		if (Txt_Type) Txt_Type->SetText(FText::FromString(TEXT("区镇")));
+		DisplayType = TEXT("区镇");
 	}
 	else if (InType == "Street")
 	{
 		BgColor = FLinearColor(0.1f, 0.1f, 0.8f, 0.6f); // 蓝
 		Indent = 30.0f;
-		if (Txt_Type) Txt_Type->SetText(FText::FromString(TEXT("街道")));
+		DisplayType = TEXT("街道");
 	}
 	else if (InType == "Community")
 	{
 		BgColor = FLinearColor(0.1f, 0.6f, 0.1f, 0.6f); // 绿
 		Indent = 60.0f;
-		if (Txt_Type) Txt_Type->SetText(FText::FromString(TEXT("小区")));
+		DisplayType = TEXT("小区");
 	}
 	else if (InType == "Reconstruct")
 	{
 		BgColor = FLinearColor(0.5f, 0.0f, 0.5f, 0.6f); // 紫
 		Indent = 0.0f;
-		if (Txt_Type) Txt_Type->SetText(FText::FromString(TEXT("重构")));
+		DisplayType = TEXT("重构");
+	}
+	else if (InType == "Custom") // 3. 新增自定义类型样式
+	{
+		BgColor = FLinearColor(0.0f, 0.5f, 0.5f, 0.6f); // 青色 (区分)
+		Indent = 60.0f; // 缩进与小区一致 (因为属于街道)
+		DisplayType = TEXT("自定义");
+
+		// 如果有标签，显示为 "自定义 | 标签名"
+		if (!InTag.IsEmpty())
+		{
+			DisplayType += TEXT(" | ") + InTag;
+		}
 	}
 
-	// 应用缩进 (这里假设 Content_Border 是最外层容器)
+	if (Txt_Type) Txt_Type->SetText(FText::FromString(DisplayType));
+
+	// 4. 应用缩进
 	if (Content_Border)
 	{
 		Content_Border->SetBrushColor(BgColor);
-		// 设置左边距实现层级感
 		Content_Border->SetPadding(FMargin(Indent, 2.0f, 0.0f, 2.0f));
 	}
 }
@@ -82,24 +88,14 @@ void UGISPolyItem::AddChildItem(UGISPolyItem* ChildWidget)
 	}
 }
 
-void UGISPolyItem::UpdateData(FString NewName, FString NewColor, float NewOpacity)
+void UGISPolyItem::UpdateData(FString NewName, FString NewColor, float NewOpacity, FString NewTextColor)
 {
-	// 1. 更新内部变量
 	this->ItemName = NewName;
 	this->ItemColor = NewColor;
 	this->ItemOpacity = NewOpacity;
+	this->ItemTextColor = NewTextColor;
 
-	// 2. 【核心修复】立即更新 UI 上的文字
-	if (Txt_Name)
-	{
-		Txt_Name->SetText(FText::FromString(NewName));
-	}
-
-	// (可选) 如果你希望列表项的背景色也跟着变，可以在这里写：
-	if (Content_Border)
-	{
-		Content_Border->SetBrushColor(FLinearColor::FromSRGBColor(FColor::FromHex(NewColor)));
-	}
+	if (Txt_Name) Txt_Name->SetText(FText::FromString(NewName));
 }
 
 void UGISPolyItem::OnFocusClicked()
@@ -110,17 +106,10 @@ void UGISPolyItem::OnFocusClicked()
 void UGISPolyItem::OnDeleteClicked()
 {
 	if (MainUI.IsValid()) MainUI->DeleteID(ItemID);
-	// 注意：这里不需要 RemoveFromParent，因为 JS 会回调 Delete 逻辑，
-	// 或者你可以直接删，但为了同步最好是等 JS 确认删除了再通过刷新列表移除。
-	// 为了简单体验，直接移除：
 	this->RemoveFromParent();
 }
 
 void UGISPolyItem::OnEditClicked()
 {
-	if (MainUI.IsValid())
-	{
-		// 呼叫主界面的编辑弹窗
-		MainUI->OpenEditDialog(this);
-	}
+	if (MainUI.IsValid()) MainUI->OpenEditDialog(this);
 }

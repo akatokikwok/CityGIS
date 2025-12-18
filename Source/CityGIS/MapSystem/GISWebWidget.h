@@ -67,11 +67,18 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UEditableText* Edit_Input_Opacity; // 用文本框输 0.5 简单
 
+	UPROPERTY(meta = (BindWidget)) UEditableText* Edit_Input_TextColor;
+	
 	// 【新增 UI】颜色相关控件
 	UPROPERTY(meta = (BindWidget)) UBorder* Color_Preview;
 	UPROPERTY(meta = (BindWidget)) USlider* Slider_R;
 	UPROPERTY(meta = (BindWidget)) USlider* Slider_G;
 	UPROPERTY(meta = (BindWidget)) USlider* Slider_B;
+
+	UPROPERTY(meta = (BindWidget)) UBorder* TextColor_Preview;
+	UPROPERTY(meta = (BindWidget)) USlider* Slider_Text_R;
+	UPROPERTY(meta = (BindWidget)) USlider* Slider_Text_G;
+	UPROPERTY(meta = (BindWidget)) USlider* Slider_Text_B;
 	
 public:
 	virtual void NativeConstruct() override;
@@ -142,6 +149,9 @@ private:
 
 	// 辅助：更新 UI 显示 (Hex 文本, 预览图, 滑块位置)
 	void UpdateColorUI(FLinearColor Color);
+
+	//
+	void UpdateTextColorUI(FLinearColor Color);
 	
 	// 字典：快速查找父级 Widget
 	TMap<FString, UGISPolyItem*> WidgetMap;

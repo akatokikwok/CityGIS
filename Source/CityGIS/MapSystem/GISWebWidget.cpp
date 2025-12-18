@@ -72,50 +72,92 @@ void UGISWebWidget::OnTitleChanged(const FText& TitleText)
 
 void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& Source, int32 Line)
 {
-	// Message 就是 JS 里 console.log("...") 的内容
+	// // Message 就是 JS 里 console.log("...") 的内容
+	//
+	// // 为了防止处理无关的报错日志，我们只处理以 UE_ 开头的
+	// if (!Message.StartsWith("UE_")) return;
+	//
+	// // 【核心修复 2】微秒级时间防抖 (Time Debounce)
+	// // 如果这条消息距离上一条消息小于 0.1 秒，直接视为引擎回显或BUG，丢弃。
+	// // (因为我们的 JS 队列是间隔 0.3 秒发送的，所以合法消息不会被误杀)
+	// double CurrentTime = FPlatformTime::Seconds();
+	// const double& DeltaMinus = CurrentTime - LastLogTime;
+	// if (DeltaMinus < 0.01)
+	// {
+	// 	return;
+	// }
+	// LastLogTime = CurrentTime;
+	//
+	// // 打印一下，确保我们收到了
+	// UE_LOG(LogTemp, Log, TEXT("GIS Received JS Message: %s"), *Message);
+	//
+	// // 1. 处理保存: UE_SAVE:文件名|JSON
+	// if (Message.StartsWith("UE_SAVE:"))
+	// {
+	// 	FString Content = Message.RightChop(8);
+	// 	FString Name, Data;
+	// 	if (Content.Split("|", &Name, &Data))
+	// 	{
+	// 		FString Path = FPaths::ProjectSavedDir() + TEXT("GISData/") + Name;
+	// 		FFileHelper::SaveStringToFile(Data, *Path, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+	// 		UE_LOG(LogTemp, Warning, TEXT("GIS: Saved File to %s"), *Path);
+	// 	}
+	// }
+	// // 2. 处理添加列表项: UE_ADD:ID|Name
+	// else if (Message.StartsWith("UE_ADD:"))
+	// {
+	// 	FString Content = Message.RightChop(7);
+	// 	// FString ID, Name, Type, ParentID;
+	//
+	// 	// 格式: ID|Name|Type|Timestamp
+	// 	// 我们需要拆解前三个
+	// 	TArray<FString> Parts;
+	// 	Content.ParseIntoArray(Parts, TEXT("|"), false);
+	//
+	// 	// 【关键】现在有 9 个部分
+	// 	if (Parts.Num() >= 9) 
+	// 	{
+	// 		FString ID = Parts[0];
+	// 		FString Name = Parts[1];
+	// 		FString Type = Parts[2];
+	// 		FString ParentID = Parts[3];
+	// 		FString Color = Parts[4];
+	// 		float Opacity = FCString::Atof(*Parts[5]);
+	// 		FString TextColor = Parts[6];
+	// 		FString Tag = Parts[7]; // 新增 Tag
+	//
+	// 		// ID 查重 (保持不变)
+	// 		if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase)) return;
+	// 		LastProcessedID = ID;
+	//
+	// 		// 调用 C++ 内部函数构建 UI
+	// 		// 调用处理函数 (你需要修改这个函数的签名)
+	// 		ProcessAddPolyItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag);
+	//
+	// 		if (OnAddPolyItemDelegate.IsBound())
+	// 		{
+	// 			// 广播三个参数
+	// 			OnAddPolyItemDelegate.Broadcast(ID, Name, Type, ParentID);
+	// 		}
+	// 	}
+	// }
 
-	// 为了防止处理无关的报错日志，我们只处理以 UE_ 开头的
+
 	if (!Message.StartsWith("UE_")) return;
 
-	// 【核心修复 2】微秒级时间防抖 (Time Debounce)
-	// 如果这条消息距离上一条消息小于 0.1 秒，直接视为引擎回显或BUG，丢弃。
-	// (因为我们的 JS 队列是间隔 0.3 秒发送的，所以合法消息不会被误杀)
 	double CurrentTime = FPlatformTime::Seconds();
-	const double& DeltaMinus = CurrentTime - LastLogTime;
-	if (DeltaMinus < 0.01)
-	{
-		return;
-	}
+	if (CurrentTime - LastLogTime < 0.02) return;
 	LastLogTime = CurrentTime;
 
-	// 打印一下，确保我们收到了
-	UE_LOG(LogTemp, Log, TEXT("GIS Received JS Message: %s"), *Message);
-
-	// 1. 处理保存: UE_SAVE:文件名|JSON
-	if (Message.StartsWith("UE_SAVE:"))
-	{
-		FString Content = Message.RightChop(8);
-		FString Name, Data;
-		if (Content.Split("|", &Name, &Data))
-		{
-			FString Path = FPaths::ProjectSavedDir() + TEXT("GISData/") + Name;
-			FFileHelper::SaveStringToFile(Data, *Path, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
-			UE_LOG(LogTemp, Warning, TEXT("GIS: Saved File to %s"), *Path);
-		}
-	}
-	// 2. 处理添加列表项: UE_ADD:ID|Name
-	else if (Message.StartsWith("UE_ADD:"))
+	// UE_ADD:ID|Name|Type|ParentID|Color|Opacity|TextColor|Tag|Time
+	if (Message.StartsWith("UE_ADD:"))
 	{
 		FString Content = Message.RightChop(7);
-		// FString ID, Name, Type, ParentID;
-
-		// 格式: ID|Name|Type|Timestamp
-		// 我们需要拆解前三个
 		TArray<FString> Parts;
 		Content.ParseIntoArray(Parts, TEXT("|"), false);
 
-		// 【关键】现在有 9 个部分
-		if (Parts.Num() >= 9) 
+		// 1. 确保参数数量为 9
+		if (Parts.Num() >= 9)
 		{
 			FString ID = Parts[0];
 			FString Name = Parts[1];
@@ -124,16 +166,15 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 			FString Color = Parts[4];
 			float Opacity = FCString::Atof(*Parts[5]);
 			FString TextColor = Parts[6];
-			FString Tag = Parts[7]; // 新增 Tag
+			FString Tag = Parts[7]; // 获取 Tag
 
-			// ID 查重 (保持不变)
 			if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase)) return;
 			LastProcessedID = ID;
 
-			// 调用 C++ 内部函数构建 UI
-			// 调用处理函数 (你需要修改这个函数的签名)
+			// 2. 调用构建
 			ProcessAddPolyItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag);
 
+			// 3. OnAddPolyItemDelegate
 			if (OnAddPolyItemDelegate.IsBound())
 			{
 				// 广播三个参数
@@ -141,53 +182,50 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 			}
 		}
 	}
+	else if (Message.StartsWith("UE_SAVE:"))
+	{
+		FString Content = Message.RightChop(8);
+		FString Name, Data;
+		if (Content.Split("|", &Name, &Data))
+		{
+			FString Path = FPaths::ProjectSavedDir() + TEXT("GISData/") + Name;
+			FFileHelper::SaveStringToFile(Data, *Path, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+		}
+	}
 }
 
 // 核心：C++ 构建树状 UI
-void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color, float Opacity, FString TextColor, FString Tag)
+void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color,
+                                       float Opacity, FString TextColor, FString Tag)
 {
-	if (!PolyItemClass)
-	{
-		UE_LOG(LogTemp, Error, TEXT("GIS: PolyItemClass not set in BP_GISMain!"));
-		return;
-	}
+	if (!PolyItemClass) return;
 
-	// 1. 创建 Widget
 	UGISPolyItem* NewItem = CreateWidget<UGISPolyItem>(this, PolyItemClass);
 	if (!NewItem) return;
 
-	// 2. 初始化数据
-	// 传入新参数
 	NewItem->SetupItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag, this);
-
-	// 3. 存入字典
 	WidgetMap.Add(ID, NewItem);
 
-	// 4. 挂载到 UI
+	// 3. 挂载逻辑更新
 	if (Type == "Reconstruct")
 	{
-		// 重构块 -> 单独列表
 		if (List_Reconstruct) List_Reconstruct->AddChild(NewItem);
 	}
 	else if (Type == "District")
 	{
-		// 区镇 -> 顶级列表
 		if (List_Admin) List_Admin->AddChild(NewItem);
 	}
-	else if (Type == "Street" || Type == "Community")
+	// Custom 与 Community 一样，尝试挂载到 ParentID (街道) 下
+	else if (Type == "Street" || Type == "Community" || Type == "Custom")
 	{
-		// 街道/小区 -> 找爸爸
 		UGISPolyItem** ParentWidgetPtr = WidgetMap.Find(ParentID);
 		if (ParentWidgetPtr && *ParentWidgetPtr)
 		{
-			// 找到了爸爸，加到爸爸怀里 (Child_Container)
 			(*ParentWidgetPtr)->AddChildItem(NewItem);
 		}
-		else
+		else if (List_Admin)
 		{
-			// 没找到爸爸 (可能是孤儿数据)，做容错处理，加到最外层
-			UE_LOG(LogTemp, Warning, TEXT("GIS: Orphan Item %s (Parent %s not found)"), *Name, *ParentID);
-			if (List_Admin) List_Admin->AddChild(NewItem);
+			List_Admin->AddChild(NewItem); // 找不到爹就挂根目录
 		}
 	}
 }
@@ -197,7 +235,7 @@ void UGISWebWidget::OnColorSliderChanged(float Value)
 	if (Slider_R && Slider_G && Slider_B)
 	{
 		FLinearColor NewColor(Slider_R->GetValue(), Slider_G->GetValue(), Slider_B->GetValue());
-        
+
 		// 更新预览和 Hex 文本
 		if (Color_Preview) Color_Preview->SetBrushColor(NewColor);
 		if (Edit_Input_Color) Edit_Input_Color->SetText(FText::FromString("#" + NewColor.ToFColor(true).ToHex()));
@@ -216,6 +254,15 @@ void UGISWebWidget::UpdateColorUI(FLinearColor Color)
 
 	// 3. 更新 Hex 文本框
 	if (Edit_Input_Color) Edit_Input_Color->SetText(FText::FromString("#" + Color.ToFColor(true).ToHex()));
+}
+
+void UGISWebWidget::UpdateTextColorUI(FLinearColor Color)
+{
+	if (Slider_Text_R) Slider_Text_R->SetValue(Color.R);
+	if (Slider_Text_G) Slider_Text_G->SetValue(Color.G);
+	if (Slider_Text_B) Slider_Text_B->SetValue(Color.B);
+	if (TextColor_Preview) TextColor_Preview->SetBrushColor(Color);
+	if (Edit_Input_TextColor) Edit_Input_TextColor->SetText(FText::FromString("#" + Color.ToFColor(true).ToHex()));
 }
 
 void UGISWebWidget::LoadMap(FString FileName)
@@ -290,19 +337,13 @@ void UGISWebWidget::OpenEditDialog(class UGISPolyItem* ItemToEdit)
 {
 	if (!ItemToEdit) return;
 	CurrentEditingItem = ItemToEdit;
-
-	// 填充名字
 	if (Edit_Input_Name) Edit_Input_Name->SetText(FText::FromString(ItemToEdit->GetItemName()));
 	if (Edit_Input_Opacity) Edit_Input_Opacity->SetText(FText::AsNumber(ItemToEdit->GetItemOpacity()));
 
-	// 解析颜色 Hex -> LinearColor
-	FString Hex = ItemToEdit->GetItemColor();
-	FLinearColor CurrentColor = FLinearColor::Blue; // 默认防崩
-	FColor SrgbColor = FColor::FromHex(Hex);
-	CurrentColor = FLinearColor::FromSRGBColor(SrgbColor);
-
-	// 更新 UI
-	UpdateColorUI(CurrentColor);
+	FColor FillColor = FColor::FromHex(ItemToEdit->GetItemColor());
+	UpdateColorUI(FLinearColor::FromSRGBColor(FillColor));
+	FColor TextCol = FColor::FromHex(ItemToEdit->GetItemTextColor());
+	UpdateTextColorUI(FLinearColor::FromSRGBColor(TextCol));
 
 	if (Edit_Dialog_Overlay) Edit_Dialog_Overlay->SetVisibility(ESlateVisibility::Visible);
 }
@@ -312,22 +353,19 @@ void UGISWebWidget::SaveEditChanges()
 	// 确保当前有选中的项，且浏览器有效
 	if (CurrentEditingItem.IsValid() && MapBrowser)
 	{
-		// 直接从 Hex 文本框取值 (因为它被滑块实时更新了)
 		FString NewName = Edit_Input_Name->GetText().ToString();
 		FString NewColor = Edit_Input_Color->GetText().ToString();
 		FString NewOpacityStr = Edit_Input_Opacity->GetText().ToString();
-		float NewOpacity = FCString::Atof(*NewOpacityStr); // 转为 float
-        
+		float NewOpacity = FCString::Atof(*NewOpacityStr);
+		FString NewTextColor = Edit_Input_TextColor->GetText().ToString();
 		FString ID = CurrentEditingItem->GetItemID();
 
-		// 1. 调用 JS 更新地图 (保持不变)
-		FString Script = FString::Printf(TEXT("updatePolyAttributes('%s', '%s', '%s', '%s');"), *ID, *NewName, *NewColor, *NewOpacityStr);
+		FString Script = FString::Printf(
+			TEXT("updatePolyAttributes('%s', '%s', '%s', '%s', '%s');"), *ID, *NewName, *NewColor, *NewOpacityStr,
+			*NewTextColor);
 		MapBrowser->ExecuteJavascript(Script);
-
-		// 2. 【核心修复】调用列表项的自我更新函数
-		CurrentEditingItem->UpdateData(NewName, NewColor, NewOpacity);
+		CurrentEditingItem->UpdateData(NewName, NewColor, NewOpacity, NewTextColor);
 	}
-    
 	CloseEditDialog();
 }
 

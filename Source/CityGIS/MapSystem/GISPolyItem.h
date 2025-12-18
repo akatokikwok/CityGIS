@@ -32,9 +32,10 @@ public:
 	FString GetItemName() const { return ItemName; }
 	FString GetItemColor() const { return ItemColor; }
 	float GetItemOpacity() const { return ItemOpacity; }
-
+	FString GetItemTextColor() const { return ItemTextColor; }
+	
 	// 【新增】更新数据接口
-	void UpdateData(FString NewName, FString NewColor, float NewOpacity);
+	void UpdateData(FString NewName, FString NewColor, float NewOpacity, FString NewTextColor);
 	
 protected:
 	// 【新增】编辑按钮
@@ -74,6 +75,7 @@ private:
 	FString ItemName; // 存一下名字
 	FString ItemType;
 	FString ItemColor; // 存颜色 Hex
+	FString ItemTextColor;
 	float ItemOpacity; // 存透明度
 
 	// 弱引用主界面，防止内存泄漏
