@@ -141,8 +141,8 @@ private:
 	void HandleConsoleMessage(const FString& Message, const FString& Source, int32 Line);
 
 	// 核心：处理新条目创建和层级挂载
-	// 修改函数声明，增加 Tag 参数
-	void ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color, float Opacity, FString TextColor, FString Tag);
+	// 【修改】增加 float Height 参数，用于接收高架/建筑高度
+	void ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color, float Opacity, FString TextColor, FString Tag, float Height);
 
 	// 内部函数：当滑块变动时更新 Hex 和 预览
 	UFUNCTION() void OnColorSliderChanged(float Value);
@@ -154,6 +154,7 @@ private:
 	void UpdateTextColorUI(FLinearColor Color);
 	
 	// 字典：快速查找父级 Widget
+	UPROPERTY()
 	TMap<FString, UGISPolyItem*> WidgetMap;
 
 	FString SaveFilePath;

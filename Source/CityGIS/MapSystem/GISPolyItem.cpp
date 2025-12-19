@@ -13,71 +13,107 @@ void UGISPolyItem::NativeConstruct()
 	if (Btn_Edit) Btn_Edit->OnClicked.AddDynamic(this, &UGISPolyItem::OnEditClicked);
 }
 
-void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FString InParentID, FString InColor,
-							 float InOpacity, FString InTextColor, FString InTag, UGISWebWidget* InMainUI)
+void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FString InParentID, FString InColor, float InOpacity, FString InTextColor, FString InTag, float InHeight, UGISWebWidget* InMainUI)
 {
-	this->ItemID = InID;
-	this->ItemName = InName;
-	this->ItemType = InType;
-	this->ItemColor = InColor;
-	this->ItemOpacity = InOpacity;
-	this->ItemTextColor = InTextColor;
-	this->MainUI = InMainUI;
-	this->ItemTag = InTag;
+    this->ItemID = InID;
+    this->ItemName = InName;
+    this->ItemType = InType;
+    this->ItemColor = InColor;
+    this->ItemOpacity = InOpacity;
+    this->ItemTextColor = InTextColor;
+    this->ItemTag = InTag;
+    this->ItemHeight = InHeight; // 【新增】保存高度
+    this->MainUI = InMainUI;
 
-	if (Txt_Name) Txt_Name->SetText(FText::FromString(InName));
+    if (Txt_Name)
+    {
+        Txt_Name->SetText(FText::FromString(InName));
+    }
+    
+    // --- 1. 处理类型显示逻辑 ---
+    FString DisplayType = InType;
+    
+    if (InType == "District") 
+    {
+        DisplayType = TEXT("区镇");
+    }
+    else if (InType == "Street") 
+    {
+        DisplayType = TEXT("街道");
+    }
+    else if (InType == "Community") 
+    {
+        DisplayType = TEXT("小区");
+    }
+    else if (InType == "Reconstruct") 
+    {
+        DisplayType = TEXT("重构");
+    }
+    else if (InType == "Custom") 
+    {
+        DisplayType = TEXT("自定义");
+    }
+    else if (InType == "Road") // 【新增】道路类型显示
+    {
+        DisplayType = TEXT("道路");
+    }
 
-	// --- 1. 确定显示名称和样式 ---
-	FString DisplayType = InType;
-	FLinearColor BgColor = FLinearColor::Gray;
-	float Indent = 0.0f;
+    // 【新增】拼接标签 (Tag)
+    if (!InTag.IsEmpty()) 
+    {
+        DisplayType += TEXT(" | ") + InTag;
+    }
+    
+    // 【新增】拼接高度 (Height)，如果有值的话
+    if (InHeight > 0.0f)
+    {
+        // 显示为 " | H:20m"
+        DisplayType += FString::Printf(TEXT(" | H:%.0fm"), InHeight);
+    }
 
-	if (InType == "District")
-	{
-		DisplayType = TEXT("区镇");
-		BgColor = FLinearColor(0.8f, 0.1f, 0.1f, 0.6f); // 红
-		Indent = 0.0f;
-	}
-	else if (InType == "Street")
-	{
-		DisplayType = TEXT("街道");
-		BgColor = FLinearColor(0.1f, 0.1f, 0.8f, 0.6f); // 蓝
-		Indent = 30.0f;
-	}
-	else if (InType == "Community")
-	{
-		DisplayType = TEXT("小区");
-		BgColor = FLinearColor(0.1f, 0.6f, 0.1f, 0.6f); // 绿
-		Indent = 60.0f;
-	}
-	else if (InType == "Reconstruct")
-	{
-		DisplayType = TEXT("重构");
-		BgColor = FLinearColor(0.5f, 0.0f, 0.5f, 0.6f); // 紫
-		Indent = 0.0f;
-	}
-	else if (InType == "Custom")
-	{
-		DisplayType = TEXT("自定义");
-		BgColor = FLinearColor(0.0f, 0.5f, 0.5f, 0.6f); // 青
-		Indent = 60.0f; // 缩进同小区
-	}
+    if (Txt_Type)
+    {
+        Txt_Type->SetText(FText::FromString(DisplayType));
+    }
 
-	// --- 2. 【核心修复】统一追加标签 ---
-	// 无论是什么类型，只要有 Tag，就显示出来
-	if (!InTag.IsEmpty())
-	{
-		DisplayType += TEXT(" | ") + InTag;
-	}
+    // --- 2. 设置颜色条与缩进 ---
+    if (Content_Border)
+    {
+        float Indent = 0.0f;
+        FLinearColor BgColor = FLinearColor::Gray;
 
-	// --- 3. 应用到 UI ---
-	if (Txt_Type) Txt_Type->SetText(FText::FromString(DisplayType));
+        if (InType == "District") 
+        {
+            BgColor = FLinearColor(0.8f, 0.1f, 0.1f, 0.6f);
+        } 
+        else if (InType == "Street") 
+        {
+            BgColor = FLinearColor(0.1f, 0.1f, 0.8f, 0.6f);
+            Indent = 20.0f;
+        } 
+        else if (InType == "Community") 
+        {
+            BgColor = FLinearColor(0.1f, 0.6f, 0.1f, 0.6f);
+            Indent = 40.0f;
+        } 
+        else if (InType == "Custom") 
+        {
+            BgColor = FLinearColor(0.0f, 0.5f, 0.5f, 0.6f);
+            Indent = 40.0f;
+        } 
+        else if (InType == "Road") // 【新增】道路样式
+        {
+            BgColor = FLinearColor(0.2f, 0.2f, 0.2f, 0.8f); // 深灰色背景
+            Indent = 40.0f; // 与小区同级缩进
+        }
 
-	if (Content_Border)
-	{
-		// Content_Border->SetBrushColor(BgColor);
-		Content_Border->SetPadding(FMargin(Indent, 2.0f, 0.0f, 2.0f));
-	}
+        Content_Border->SetBrushColor(BgColor);
+        
+        if (Child_Container)
+        {
+            Child_Container->SetRenderTranslation(FVector2D(Indent, 0));
+        }
+    }
 }
 
 void UGISPolyItem::AddChildItem(UGISPolyItem* ChildWidget)

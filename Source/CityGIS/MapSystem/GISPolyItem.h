@@ -22,7 +22,8 @@ public:
 	virtual void NativeConstruct() override;
 
 	// 【修改】SetupItem 增加颜色和透明度参数
-	void SetupItem(FString InID, FString InName, FString InType, FString InParentID, FString InColor, float InOpacity, FString InTextColor, FString InTag, UGISWebWidget* InMainUI);
+	// 【修改】SetupItem 增加 float InHeight 参数
+	void SetupItem(FString InID, FString InName, FString InType, FString InParentID, FString InColor, float InOpacity, FString InTextColor, FString InTag, float InHeight, UGISWebWidget* InMainUI);
 
 	// 添加子项到下方的容器中
 	void AddChildItem(UGISPolyItem* ChildWidget);
@@ -82,4 +83,7 @@ private:
 	TWeakObjectPtr<UGISWebWidget> MainUI;
 
 	FString ItemTag; // 存储标签
+
+	// 【新增】存储高度字段
+	float ItemHeight;
 };

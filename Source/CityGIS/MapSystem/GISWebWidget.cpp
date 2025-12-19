@@ -72,77 +72,6 @@ void UGISWebWidget::OnTitleChanged(const FText& TitleText)
 
 void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& Source, int32 Line)
 {
-	// // Message 就是 JS 里 console.log("...") 的内容
-	//
-	// // 为了防止处理无关的报错日志，我们只处理以 UE_ 开头的
-	// if (!Message.StartsWith("UE_")) return;
-	//
-	// // 【核心修复 2】微秒级时间防抖 (Time Debounce)
-	// // 如果这条消息距离上一条消息小于 0.1 秒，直接视为引擎回显或BUG，丢弃。
-	// // (因为我们的 JS 队列是间隔 0.3 秒发送的，所以合法消息不会被误杀)
-	// double CurrentTime = FPlatformTime::Seconds();
-	// const double& DeltaMinus = CurrentTime - LastLogTime;
-	// if (DeltaMinus < 0.01)
-	// {
-	// 	return;
-	// }
-	// LastLogTime = CurrentTime;
-	//
-	// // 打印一下，确保我们收到了
-	// UE_LOG(LogTemp, Log, TEXT("GIS Received JS Message: %s"), *Message);
-	//
-	// // 1. 处理保存: UE_SAVE:文件名|JSON
-	// if (Message.StartsWith("UE_SAVE:"))
-	// {
-	// 	FString Content = Message.RightChop(8);
-	// 	FString Name, Data;
-	// 	if (Content.Split("|", &Name, &Data))
-	// 	{
-	// 		FString Path = FPaths::ProjectSavedDir() + TEXT("GISData/") + Name;
-	// 		FFileHelper::SaveStringToFile(Data, *Path, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
-	// 		UE_LOG(LogTemp, Warning, TEXT("GIS: Saved File to %s"), *Path);
-	// 	}
-	// }
-	// // 2. 处理添加列表项: UE_ADD:ID|Name
-	// else if (Message.StartsWith("UE_ADD:"))
-	// {
-	// 	FString Content = Message.RightChop(7);
-	// 	// FString ID, Name, Type, ParentID;
-	//
-	// 	// 格式: ID|Name|Type|Timestamp
-	// 	// 我们需要拆解前三个
-	// 	TArray<FString> Parts;
-	// 	Content.ParseIntoArray(Parts, TEXT("|"), false);
-	//
-	// 	// 【关键】现在有 9 个部分
-	// 	if (Parts.Num() >= 9) 
-	// 	{
-	// 		FString ID = Parts[0];
-	// 		FString Name = Parts[1];
-	// 		FString Type = Parts[2];
-	// 		FString ParentID = Parts[3];
-	// 		FString Color = Parts[4];
-	// 		float Opacity = FCString::Atof(*Parts[5]);
-	// 		FString TextColor = Parts[6];
-	// 		FString Tag = Parts[7]; // 新增 Tag
-	//
-	// 		// ID 查重 (保持不变)
-	// 		if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase)) return;
-	// 		LastProcessedID = ID;
-	//
-	// 		// 调用 C++ 内部函数构建 UI
-	// 		// 调用处理函数 (你需要修改这个函数的签名)
-	// 		ProcessAddPolyItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag);
-	//
-	// 		if (OnAddPolyItemDelegate.IsBound())
-	// 		{
-	// 			// 广播三个参数
-	// 			OnAddPolyItemDelegate.Broadcast(ID, Name, Type, ParentID);
-	// 		}
-	// 	}
-	// }
-
-
 	if (!Message.StartsWith("UE_")) return;
 
 	double CurrentTime = FPlatformTime::Seconds();
@@ -156,8 +85,8 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 		TArray<FString> Parts;
 		Content.ParseIntoArray(Parts, TEXT("|"), false);
 
-		// 1. 确保参数数量为 9
-		if (Parts.Num() >= 9)
+		// 1. 确保参数数量为 10
+		if (Parts.Num() >= 10)
 		{
 			FString ID = Parts[0];
 			FString Name = Parts[1];
@@ -167,12 +96,15 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 			float Opacity = FCString::Atof(*Parts[5]);
 			FString TextColor = Parts[6];
 			FString Tag = Parts[7]; // 获取 Tag
-
+			// 【新增】解析高度字段
+			float Height = FCString::Atof(*Parts[8]);
+			
 			if (ID.Equals(LastProcessedID, ESearchCase::IgnoreCase)) return;
 			LastProcessedID = ID;
 
 			// 2. 调用构建
-			ProcessAddPolyItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag);
+			// 【修改】调用时传入 Height
+			ProcessAddPolyItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag, Height);
 
 			// 3. OnAddPolyItemDelegate
 			if (OnAddPolyItemDelegate.IsBound())
@@ -195,37 +127,51 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 }
 
 // 核心：C++ 构建树状 UI
-void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color,
-                                       float Opacity, FString TextColor, FString Tag)
+void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, FString ParentID, FString Color, float Opacity, FString TextColor, FString Tag, float Height)
 {
-	if (!PolyItemClass) return;
+	if (!PolyItemClass)
+	{
+		return;
+	}
 
 	UGISPolyItem* NewItem = CreateWidget<UGISPolyItem>(this, PolyItemClass);
-	if (!NewItem) return;
+	if (!NewItem)
+	{
+		return;
+	}
 
-	NewItem->SetupItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag, this);
+	// 【修改】传入 Height
+	NewItem->SetupItem(ID, Name, Type, ParentID, Color, Opacity, TextColor, Tag, Height, this);
 	WidgetMap.Add(ID, NewItem);
 
-	// 3. 挂载逻辑更新
-	if (Type == "Reconstruct")
+	// 层级挂载逻辑
+	if (Type == "Reconstruct") 
 	{
-		if (List_Reconstruct) List_Reconstruct->AddChild(NewItem);
+		if (List_Reconstruct)
+		{
+			List_Reconstruct->AddChild(NewItem);
+		}
 	}
-	else if (Type == "District")
+	else if (Type == "District") 
 	{
-		if (List_Admin) List_Admin->AddChild(NewItem);
+		if (List_Admin)
+		{
+			List_Admin->AddChild(NewItem);
+		}
 	}
-	// Custom 与 Community 一样，尝试挂载到 ParentID (街道) 下
-	else if (Type == "Street" || Type == "Community" || Type == "Custom")
+	// 【修改】Road 和 Custom 一样，都是子级元素，尝试挂载到 ParentID (街道) 下
+	else if (Type == "Street" || Type == "Community" || Type == "Custom" || Type == "Road") 
 	{
 		UGISPolyItem** ParentWidgetPtr = WidgetMap.Find(ParentID);
-		if (ParentWidgetPtr && *ParentWidgetPtr)
+        
+		if (ParentWidgetPtr && *ParentWidgetPtr) 
 		{
 			(*ParentWidgetPtr)->AddChildItem(NewItem);
 		}
-		else if (List_Admin)
+		else if (List_Admin) 
 		{
-			List_Admin->AddChild(NewItem); // 找不到爹就挂根目录
+			// 如果找不到父级，挂到根目录防止数据丢失
+			List_Admin->AddChild(NewItem);
 		}
 	}
 }
