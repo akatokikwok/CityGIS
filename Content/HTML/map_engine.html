@@ -246,6 +246,32 @@
             animation: popUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
         }
 
+        /* 【新增】搜索弹窗样式 */
+        #search_modal
+        {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10001; /* 比普通弹窗高 */
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+            width: 260px;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            border: 1px solid #eee;
+        }
+
+        #search_modal h4
+        {
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            color: #333;
+        }
+
         @keyframes popUp
         {
             from { bottom: -200px; opacity: 0; }
@@ -309,22 +335,22 @@
             font-weight: bold;
         }
 
-        #btn_confirm
+        #btn_confirm, #btn_search_confirm
         {
             background-color: #007bff;
         }
 
-        #btn_confirm:hover
+        #btn_confirm:hover, #btn_search_confirm:hover
         {
             background-color: #0056b3;
         }
 
-        #btn_cancel
+        #btn_cancel, #btn_search_cancel
         {
             background-color: #6c757d;
         }
 
-        #btn_cancel:hover
+        #btn_cancel:hover, #btn_search_cancel:hover
         {
             background-color: #5a6268;
         }
@@ -391,12 +417,12 @@
 
     <div id="style_toolbox">
         <h4>🎨 绘图样式板</h4>
-        <div class="tool-row">
-            <span>填充颜色</span> <input type="color" id="tool_color" value="#3388ff" onchange="updateStyleState()">
+        <div class="tool-row"> 
+            <span>填充颜色</span> <input type="color" id="tool_color" value="#3388ff" onchange="updateStyleState()"> 
         </div>
-        <div class="tool-row">
-            <span>不透明度</span> <input type="range" id="tool_opacity" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateStyleState()">
-            <span id="opacity_val" class="val-display">0.5</span>
+        <div class="tool-row"> 
+            <span>不透明度</span> <input type="range" id="tool_opacity" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateStyleState()"> 
+            <span id="opacity_val" class="val-display">0.5</span> 
         </div>
         <div style="font-size:10px; color:#999; margin-top:5px;">* 绘制时实时生效<br>* WASD 移动地图</div>
     </div>
@@ -418,14 +444,14 @@
             <input type="checkbox" id="snap_toggle" checked> <strong>🧲 自动吸附贴合 (Snap)</strong>
         </label>
 
-        <div id="color_filter_box">
-            <span class="input-label">分析结果:</span>
-            <select id="color_selector">
-                <option value="yellow">🟡 新拓展区</option>
-                <option value="purple">🟣 单侧覆盖</option>
-                <option value="pink">🌸 重叠核心</option>
-                <option value="all">💠 所有区域</option>
-            </select>
+        <div id="color_filter_box"> 
+            <span class="input-label">分析结果:</span> 
+            <select id="color_selector"> 
+                <option value="yellow">🟡 新拓展区</option> 
+                <option value="purple">🟣 单侧覆盖</option> 
+                <option value="pink">🌸 重叠核心</option> 
+                <option value="all">💠 所有区域</option> 
+            </select> 
         </div>
         
         <span class="input-label">归属层级:</span> 
@@ -437,18 +463,27 @@
             <option value="Reconstruct">⚡ 重构图块</option> 
         </select>
 
-        <div id="parent_container">
-            <span class="input-label" id="parent_label">附着到:</span> <select id="parent_selector"><option value="">请选择...</option></select>
+        <div id="parent_container"> 
+            <span class="input-label" id="parent_label">附着到:</span> 
+            <select id="parent_selector"><option value="">请选择...</option></select> 
         </div>
         
         <span class="input-label">自定义标签 (可选):</span> 
         <input type="text" id="poly_tag_input" placeholder="例如: 类目一, 重点区域...">
 
         <span class="input-label">区域名称:</span> <input type="text" id="poly_name_input" placeholder="请输入名称">
-        
+        <div class="btn-group"> 
+            <button id="btn_cancel" onclick="closeModal()">丢弃</button> 
+            <button id="btn_confirm" onclick="confirmSave()">保存</button> 
+        </div>
+    </div>
+
+    <div id="search_modal">
+        <h4>🔍 搜索区域</h4>
+        <input type="text" id="search_input" placeholder="输入区域名称..." style="margin-bottom: 15px;">
         <div class="btn-group">
-            <button id="btn_cancel" onclick="closeModal()">丢弃</button>
-            <button id="btn_confirm" onclick="confirmSave()">保存</button>
+            <button id="btn_search_cancel" onclick="closeSearchModal()">取消</button>
+            <button id="btn_search_confirm" onclick="confirmSearch()">确认</button>
         </div>
     </div>
 
@@ -605,7 +640,88 @@
         });
     }
 
-    // ================= 3. 状态管理 =================
+    // ================= 3. 搜索功能 (Ctrl+F) =================
+    document.addEventListener('keydown', function(e)
+    {
+        // 监听 Ctrl + F
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F'))
+        {
+            e.preventDefault(); // 阻止浏览器默认查找
+            openSearchModal();
+        }
+        
+        // 监听 WASD 移动
+        if (e.target.tagName === 'INPUT') return;
+        var k = e.key.toLowerCase();
+        if (['w','a','s','d'].includes(k))
+        {
+            keyState[k] = true;
+            if (!isPanningLoopActive)
+            {
+                isPanningLoopActive = true;
+                panMapLoop();
+            }
+        }
+    });
+
+    document.addEventListener('keyup', function(e)
+    {
+        var k = e.key.toLowerCase();
+        if (['w','a','s','d'].includes(k)) keyState[k] = false;
+    });
+
+    // 绑定回车键搜索
+    document.getElementById('search_input').addEventListener('keydown', function(e)
+    {
+        if (e.key === 'Enter') confirmSearch();
+    });
+
+    function openSearchModal()
+    {
+        document.getElementById('search_modal').style.display = 'block';
+        var input = document.getElementById('search_input');
+        input.value = "";
+        input.focus();
+    }
+
+    function closeSearchModal()
+    {
+        document.getElementById('search_modal').style.display = 'none';
+    }
+
+    function confirmSearch()
+    {
+        var val = document.getElementById('search_input').value.trim();
+        if (val)
+        {
+            var found = window.searchPoly(val);
+            if (found)
+            {
+                closeSearchModal();
+            }
+            else
+            {
+                alert("未找到名为 '" + val + "' 的区域");
+            }
+        }
+    }
+
+    // 提供给 C++ 和 内部使用的搜索逻辑
+    window.searchPoly = function(name)
+    {
+        // 模糊搜索
+        var target = appState.polygons.find(p => p.geoJson.properties.name.includes(name));
+        
+        if (target)
+        {
+            // 找到则聚焦 (调用 focusPoly 即可，它已经包含高亮逻辑)
+            focusPoly(target.geoJson.properties.id);
+            return true;
+        }
+        return false;
+    };
+
+    // ================= 4. 状态管理 =================
     window.updateStyleState = function()
     {
         var col = document.getElementById('tool_color').value;
@@ -671,31 +787,7 @@
         }
     };
 
-    // ================= 4. 交互逻辑 =================
-    var keyState = { w: false, a: false, s: false, d: false };
-    var isPanningLoopActive = false;
-
-    document.addEventListener('keydown', function(e)
-    {
-        if (e.target.tagName === 'INPUT') return;
-        var k = e.key.toLowerCase();
-        if (['w','a','s','d'].includes(k))
-        {
-            keyState[k] = true;
-            if (!isPanningLoopActive)
-            {
-                isPanningLoopActive = true;
-                panMapLoop();
-            }
-        }
-    });
-
-    document.addEventListener('keyup', function(e)
-    {
-        var k = e.key.toLowerCase();
-        if (['w','a','s','d'].includes(k)) keyState[k] = false;
-    });
-
+    // ================= 5. 交互逻辑 (WASD/Mouse) =================
     function panMapLoop()
     {
         if (!keyState.w && !keyState.a && !keyState.s && !keyState.d)
@@ -722,7 +814,8 @@
     container.addEventListener('mousedown', function(e)
     {
         if (appState.mode === 'browse') return;
-        if (e.target.closest('#save_modal') || e.target.closest('#mode_select_modal') || e.target.closest('#style_toolbox') || e.target.closest('#filter_panel')) return;
+        // 阻止点击弹窗时画图
+        if (e.target.closest('#save_modal') || e.target.closest('#mode_select_modal') || e.target.closest('#style_toolbox') || e.target.closest('#filter_panel') || e.target.closest('#search_modal')) return;
         if (e.button !== 0) return;
         if (appState.drawMethod === 'Freehand') handleFreehandDown(e);
         else if (appState.drawMethod === 'Polyline') handlePolylineDown(e);
