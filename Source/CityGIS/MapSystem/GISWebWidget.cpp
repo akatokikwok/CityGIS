@@ -5,6 +5,200 @@
 #include "Misc/Paths.h"
 #include "WebBrowserWidget/Public/WebBrowser.h"
 
+void UGISWebWidget::RequestSaveDataFromWeb()
+{
+	if (MapBrowser)
+	{
+		// 通知 JS 把数据打包发回来
+		MapBrowser->ExecuteJavascript(TEXT("requestAllDataForSave();"));
+	}
+}
+
+void UGISWebWidget::OpenLoadDialog()
+{
+	if (LoadDialogClass)
+	{
+		UGISLoadDialog* Dialog = CreateWidget<UGISLoadDialog>(this, LoadDialogClass);
+		if (Dialog)
+		{
+			Dialog->Init(this);
+		}
+	}
+}
+
+void UGISWebWidget::ExecuteSaveToFile(FString GeoJsonData, FString SaveName, FString SaveDesc)
+{
+	// 1. 构建元数据
+	TSharedPtr<FJsonObject> RootObject = MakeShareable(new FJsonObject);
+    
+	FString NewGuid = FGuid::NewGuid().ToString();
+	FString NowTime = FDateTime::Now().ToString(TEXT("%Y-%m-%d %H:%M:%S"));
+
+	RootObject->SetStringField("id", NewGuid);
+	RootObject->SetStringField("name", SaveName);
+	RootObject->SetStringField("desc", SaveDesc);
+	RootObject->SetStringField("date", NowTime);
+    
+	// 2. 将 GeoJsonData (字符串) 解析为对象放入，或者直接作为字符串存?
+	// 为了方便，我们这里存为内嵌的 Object
+	TSharedPtr<FJsonValue> GeoJsonValue;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(GeoJsonData);
+	if (FJsonSerializer::Deserialize(Reader, GeoJsonValue))
+	{
+		RootObject->SetField("data", GeoJsonValue);
+	}
+	else
+	{
+		// 如果解析失败，直接存字符串 (容错)
+		RootObject->SetStringField("raw_data", GeoJsonData);
+	}
+
+	// 3. 序列化为最终 JSON 字符串
+	FString OutputString;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
+	FJsonSerializer::Serialize(RootObject.ToSharedRef(), Writer);
+
+	// 4. 写入文件: Saved/GISData/{GUID}.json
+	FString FolderPath = FPaths::ProjectSavedDir() + TEXT("GISData/");
+	IFileManager::Get().MakeDirectory(*FolderPath, true);
+    
+	// 使用时间戳+GUID做文件名，方便排序
+	FString FileName = FString::Printf(TEXT("Save_%s_%s.json"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")), *NewGuid);
+	FString FullPath = FolderPath + FileName;
+
+	FFileHelper::SaveStringToFile(OutputString, *FullPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+    
+	UE_LOG(LogTemp, Log, TEXT("Saved to: %s"), *FullPath);
+}
+
+void UGISWebWidget::ExecuteLoadFromFile(FString FilePath)
+{
+	FString FileContent;
+	if (FFileHelper::LoadFileToString(FileContent, *FilePath))
+	{
+		TSharedPtr<FJsonObject> JsonObj;
+		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
+        
+		if (FJsonSerializer::Deserialize(Reader, JsonObj))
+		{
+			FString MapDataStr;
+            
+			if (JsonObj->HasField("data"))
+			{
+				const TSharedPtr<FJsonValue>& DataVal = JsonObj->GetField<EJson::None>("data");
+				TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&MapDataStr);
+				FJsonSerializer::Serialize(DataVal, "", Writer);
+			}
+			else if (JsonObj->HasField("raw_data"))
+			{
+				MapDataStr = JsonObj->GetStringField("raw_data");
+			}
+
+			// 清理 UI
+			if (List_Admin) List_Admin->ClearChildren();
+			if (List_Reconstruct) List_Reconstruct->ClearChildren();
+			WidgetMap.Empty();
+			LastProcessedID = "";
+
+			// 传给 JS
+			MapDataStr = MapDataStr.Replace(TEXT("\n"), TEXT("")).Replace(TEXT("\r"), TEXT(""));
+			if (MapBrowser)
+			{
+				// 注意：数据量极大时这里可能需要拆分发送，目前假设数据量可控
+				FString Script = TEXT("importMap('") + MapDataStr + TEXT("');");
+				MapBrowser->ExecuteJavascript(Script);
+			}
+		}
+	}
+}
+
+TArray<FGISSaveMetadata> UGISWebWidget::GetAllSaveFiles()
+{
+	TArray<FGISSaveMetadata> Result;
+	FString FolderPath = FPaths::ProjectSavedDir() + TEXT("GISData/");
+    
+	// 查找所有 .json 文件
+	TArray<FString> FoundFiles;
+	IFileManager::Get().FindFiles(FoundFiles, *FolderPath, TEXT("*.json"));
+
+	for (const FString& FileName : FoundFiles)
+	{
+		FString FullPath = FolderPath + FileName;
+		FString FileContent;
+		if (FFileHelper::LoadFileToString(FileContent, *FullPath))
+		{
+			TSharedPtr<FJsonObject> JsonObj;
+			TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
+			if (FJsonSerializer::Deserialize(Reader, JsonObj))
+			{
+				FGISSaveMetadata Meta;
+				Meta.ID = JsonObj->GetStringField("id");
+				Meta.Name = JsonObj->GetStringField("name");
+				Meta.Description = JsonObj->GetStringField("desc");
+				Meta.Date = JsonObj->GetStringField("date");
+				Meta.FilePath = FullPath;
+				Result.Add(Meta);
+			}
+		}
+	}
+
+	// 按日期倒序排序 (最新的在前面)
+	Result.Sort([](const FGISSaveMetadata& A, const FGISSaveMetadata& B)
+	{
+		return A.Date > B.Date; 
+	});
+
+	return Result;
+}
+
+void UGISWebWidget::LoadSaveFile(FString FilePath)
+{
+	FString FileContent;
+	if (FFileHelper::LoadFileToString(FileContent, *FilePath))
+	{
+		TSharedPtr<FJsonObject> JsonObj;
+		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
+        
+		if (FJsonSerializer::Deserialize(Reader, JsonObj))
+		{
+			// 提取核心数据部分
+			FString MapDataStr;
+            
+			// 检查是用 'data' 对象存的，还是 'raw_data' 字符串存的
+			if (JsonObj->HasField("data"))
+			{
+				const TSharedPtr<FJsonValue>& DataVal = JsonObj->GetField<EJson::None>("data");
+                
+				// 将 data 对象反序列化回字符串传给 JS
+				TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&MapDataStr);
+				FJsonSerializer::Serialize(DataVal, "", Writer);
+			}
+			else if (JsonObj->HasField("raw_data"))
+			{
+				MapDataStr = JsonObj->GetStringField("raw_data");
+			}
+
+			// 清理 C++ 列表 UI
+			if (List_Admin) List_Admin->ClearChildren();
+			if (List_Reconstruct) List_Reconstruct->ClearChildren();
+			WidgetMap.Empty();
+			LastProcessedID = "";
+
+			// 清理换行符，防止 JS 报错
+			MapDataStr = MapDataStr.Replace(TEXT("\n"), TEXT("")).Replace(TEXT("\r"), TEXT(""));
+
+			// 调用 JS 加载
+			if (MapBrowser)
+			{
+				// 使用 FString::Printf 可能会因为 JSON 太长而崩溃，建议用 ExecuteJavascript
+				// 但为了安全，这里我们拼接字符串
+				FString Script = TEXT("importMap('") + MapDataStr + TEXT("');");
+				MapBrowser->ExecuteJavascript(Script);
+			}
+		}
+	}
+}
+
 void UGISWebWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -114,14 +308,19 @@ void UGISWebWidget::HandleConsoleMessage(const FString& Message, const FString& 
 			}
 		}
 	}
-	else if (Message.StartsWith("UE_SAVE:"))
+	// 2. 【新增】接收 Web 发来的完整地图数据 (准备存档)
+	else if (Message.StartsWith("UE_EXPORT_DATA:"))
 	{
-		FString Content = Message.RightChop(8);
-		FString Name, Data;
-		if (Content.Split("|", &Name, &Data))
+		FString RawJson = Message.RightChop(15);
+        
+		// 创建纯 C++ 控制的保存弹窗
+		if (SaveDialogClass)
 		{
-			FString Path = FPaths::ProjectSavedDir() + TEXT("GISData/") + Name;
-			FFileHelper::SaveStringToFile(Data, *Path, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+			UGISSaveDialog* Dialog = CreateWidget<UGISSaveDialog>(this, SaveDialogClass);
+			if (Dialog)
+			{
+				Dialog->Init(this, RawJson);
+			}
 		}
 	}
 }

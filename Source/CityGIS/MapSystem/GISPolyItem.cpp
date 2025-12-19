@@ -107,7 +107,7 @@ void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FStri
             Indent = 40.0f; // 与小区同级缩进
         }
 
-        Content_Border->SetBrushColor(BgColor);
+        // Content_Border->SetBrushColor(BgColor);
         
         if (Child_Container)
         {

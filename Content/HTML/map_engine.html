@@ -4,52 +4,408 @@
     <meta charset="utf-8">
     <title>UE5 Map Engine</title>
     <style>
-        /* 基础样式保持 Expanded 风格，JS 逻辑严格遵循 Allman */
-        html, body, #map_container { width: 100%; height: 100%; overflow: hidden; margin: 0; padding: 0; font-family: "微软雅黑"; }
-        .anchorBL, .BMap_cpyCtrl { display: none; } 
-        .BMapLabel { background: transparent !important; border: none !important; font-size: 14px !important; font-weight: bold !important; text-shadow: 1px 1px 2px black, -1px -1px 2px black; pointer-events: none; }
+        /* ================= 1. 基础样式 ================= */
+        /* 保持地图充满全屏，无滚动条 */
+        html, body, #map_container
+        {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            font-family: "微软雅黑";
+        }
+
+        /* 隐藏百度地图的 Logo 和版权控件 */
+        .anchorBL, .BMap_cpyCtrl
+        {
+            display: none;
+        }
+
+        /* 自定义覆盖物标签样式：白色文字，黑色描边，鼠标穿透 */
+        .BMapLabel
+        {
+            background: transparent !important;
+            border: none !important;
+            font-size: 14px !important;
+            font-weight: bold !important;
+            text-shadow: 1px 1px 2px black, -1px -1px 2px black;
+            pointer-events: none;
+        }
+
+        /* ================= 2. 悬浮组件 UI ================= */
         
-        #style_toolbox { display: none; position: fixed; top: 20px; right: 20px; background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 9990; width: 220px; backdrop-filter: blur(5px); border: 1px solid #eee; }
-        .tool-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; color: #555; }
-        input[type=color] { border: none; width: 40px; height: 25px; cursor: pointer; background: none; }
-        input[type=range] { width: 100px; cursor: pointer; }
-        .val-display { font-size: 12px; color: #007bff; font-weight: bold; width: 30px; text-align: right; }
+        /* 右上角：绘图样式工具条 */
+        #style_toolbox
+        {
+            display: none; /* 默认隐藏，编辑模式显示 */
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            z-index: 9990;
+            width: 220px;
+            backdrop-filter: blur(5px);
+            border: 1px solid #eee;
+        }
 
-        #filter_panel { position: fixed; top: 220px; right: 20px; background: rgba(255, 255, 255, 0.95); padding: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 9990; width: 180px; backdrop-filter: blur(5px); border: 1px solid #eee; max-height: 55vh; overflow-y: auto; display: flex; flex-direction: column; }
-        #filter_panel h4 { margin: 0 0 10px 0; font-size: 14px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-        .filter-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 12px; cursor: pointer; }
-        .filter-item input { margin-right: 8px; cursor: pointer; }
-        .filter-group-title { font-weight: bold; margin-top: 10px; margin-bottom: 5px; font-size: 12px; color: #007bff; border-top: 1px dashed #eee; padding-top: 5px; }
-        .filter-actions { display: flex; gap: 5px; margin-bottom: 10px; }
-        .filter-btn { flex: 1; padding: 4px; font-size: 10px; border: 1px solid #ccc; background: #f0f0f0; cursor: pointer; border-radius: 4px; }
-        .filter-btn:hover { background: #e0e0e0; }
+        #style_toolbox h4
+        {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
 
-        #mode_select_modal { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10000; background: white; width: 320px; padding: 25px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center; }
-        .mode-btn { display: block; width: 100%; padding: 15px; margin-bottom: 15px; border: 2px solid #eee; border-radius: 10px; background: #f9f9f9; cursor: pointer; transition: 0.2s; text-align: left; }
-        .mode-btn:hover { border-color: #007bff; background: #eef7ff; }
-        .mode-btn strong { display: block; font-size: 16px; margin-bottom: 4px; color: #333; }
-        .mode-btn span { font-size: 12px; color: #666; }
+        .tool-row
+        {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 13px;
+            color: #555;
+        }
 
-        #save_modal { display: none; position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%); z-index: 9999; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(12px); width: 280px; padding: 20px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); border: 1px solid #eee; animation: popUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28); }
-        @keyframes popUp { from { bottom: -200px; opacity: 0; } to { bottom: 80px; opacity: 1; } }
-        #save_modal h4 { margin: 0 0 10px 0; font-size: 16px; color: #333; text-align: center; }
-        .input-label { font-size: 12px; color: #666; margin-bottom: 4px; display: block; }
-        select, input[type=text], input[type=number] { width: 100%; padding: 8px; margin-bottom: 12px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 6px; outline: none; font-size: 14px; }
-        #parent_container { display: none; background: #f9f9f9; padding: 8px; border-radius: 6px; margin-bottom: 10px; border: 1px dashed #ccc;}
-        .btn-group { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px;}
-        .btn-group button { flex: 1; padding: 8px; cursor: pointer; border: none; border-radius: 6px; color: white; font-weight: bold; }
-        #btn_confirm { background-color: #007bff; } #btn_confirm:hover { background-color: #0056b3; }
-        #btn_cancel { background-color: #6c757d; } #btn_cancel:hover { background-color: #5a6268; }
-        .checkbox-row { display: flex; align-items: center; justify-content: center; margin-bottom: 12px; padding:8px; background:#f0f8ff; border-radius:6px; cursor: pointer; border:1px dashed #a0cfff;}
-        .checkbox-row input { width: auto; margin-right: 8px; cursor: pointer; }
-        .checkbox-row strong { font-size:13px; color:#0056b3; }
-        #hint_bar { display: none; position: fixed; top: 100px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 8px 16px; border-radius: 20px; font-size: 14px; z-index: 9998; pointer-events: none; }
+        input[type=color]
+        {
+            border: none;
+            width: 40px;
+            height: 25px;
+            cursor: pointer;
+            background: none;
+        }
+
+        input[type=range]
+        {
+            width: 100px;
+            cursor: pointer;
+        }
+
+        .val-display
+        {
+            font-size: 12px;
+            color: #007bff;
+            font-weight: bold;
+            width: 30px;
+            text-align: right;
+        }
+
+        /* 右侧下方：区域筛选面板 */
+        #filter_panel
+        {
+            position: fixed;
+            top: 220px; /* 避开上方的工具条 */
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            z-index: 9990;
+            width: 180px;
+            backdrop-filter: blur(5px);
+            border: 1px solid #eee;
+            max-height: 55vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #filter_panel h4
+        {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        .filter-item
+        {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .filter-item input
+        {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .filter-group-title
+        {
+            font-weight: bold;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #007bff;
+            border-top: 1px dashed #eee;
+            padding-top: 5px;
+        }
+
+        /* 筛选面板底部的操作按钮 */
+        .filter-actions
+        {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .filter-btn
+        {
+            flex: 1;
+            padding: 4px;
+            font-size: 10px;
+            border: 1px solid #ccc;
+            background: #f0f0f0;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .filter-btn:hover
+        {
+            background: #e0e0e0;
+        }
+
+        /* ================= 3. 弹窗样式 ================= */
         
-        #search_modal { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10001; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px); width: 260px; padding: 25px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center; border: 1px solid #eee; }
-        #search_modal h4 { margin: 0 0 15px 0; font-size: 16px; color: #333; }
-        #btn_search_confirm { background-color: #007bff; } #btn_search_confirm:hover { background-color: #0056b3; }
-        #btn_search_cancel { background-color: #6c757d; } #btn_search_cancel:hover { background-color: #5a6268; }
+        /* 模式选择弹窗 (屏幕居中) */
+        #mode_select_modal
+        {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            background: white;
+            width: 320px;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        #mode_select_modal h3
+        {
+            margin: 0 0 20px 0;
+            color: #333;
+        }
+
+        .mode-btn
+        {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 2px solid #eee;
+            border-radius: 10px;
+            background: #f9f9f9;
+            cursor: pointer;
+            transition: 0.2s;
+            text-align: left;
+        }
+
+        .mode-btn:hover
+        {
+            border-color: #007bff;
+            background: #eef7ff;
+        }
+
+        .mode-btn strong
+        {
+            display: block;
+            font-size: 16px;
+            margin-bottom: 4px;
+            color: #333;
+        }
+
+        .mode-btn span
+        {
+            font-size: 12px;
+            color: #666;
+        }
+
+        /* 保存弹窗 (底部滑出) */
+        #save_modal
+        {
+            display: none;
+            position: fixed;
+            left: 50%;
+            bottom: 80px;
+            transform: translateX(-50%);
+            z-index: 9999;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(12px);
+            width: 280px;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            border: 1px solid #eee;
+            animation: popUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        }
+
+        @keyframes popUp
+        {
+            from { bottom: -200px; opacity: 0; }
+            to { bottom: 80px; opacity: 1; }
+        }
+
+        #save_modal h4
+        {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #333;
+            text-align: center;
+        }
+
+        .input-label
+        {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        /* 输入框通用样式 */
+        select, input[type=text], input[type=number]
+        {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 12px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            outline: none;
+            font-size: 14px;
+        }
+
+        #parent_container
+        {
+            display: none;
+            background: #f9f9f9;
+            padding: 8px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border: 1px dashed #ccc;
+        }
+
+        .btn-group
+        {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-group button
+        {
+            flex: 1;
+            padding: 8px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-weight: bold;
+        }
+
+        #btn_confirm, #btn_search_confirm
+        {
+            background-color: #007bff;
+        }
+
+        #btn_confirm:hover, #btn_search_confirm:hover
+        {
+            background-color: #0056b3;
+        }
+
+        #btn_cancel, #btn_search_cancel
+        {
+            background-color: #6c757d;
+        }
+
+        #btn_cancel:hover, #btn_search_cancel:hover
+        {
+            background-color: #5a6268;
+        }
+
+        .checkbox-row
+        {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #f0f8ff;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 1px dashed #a0cfff;
+        }
+
+        .checkbox-row input
+        {
+            width: auto;
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .checkbox-row strong
+        {
+            font-size: 13px;
+            color: #0056b3;
+        }
+
+        /* 操作提示条 */
+        #hint_bar
+        {
+            display: none;
+            position: fixed;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 9998;
+            pointer-events: none;
+        }
+        
+        /* 搜索弹窗 */
+        #search_modal
+        {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10001;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+            width: 260px;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            border: 1px solid #eee;
+        }
+
+        #search_modal h4
+        {
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            color: #333;
+        }
     </style>
+    
     <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 </head>
@@ -57,82 +413,168 @@
     <div id="map_container"></div>
     <div id="hint_bar">操作提示...</div>
 
-    <div id="filter_panel"><h4>🔍 区域筛选</h4><div class="filter-actions"><button class="filter-btn" onclick="selectAllFilters()">✅ 选择所有</button><button class="filter-btn" onclick="clearAllFilters()">❌ 清除所有</button></div><div id="filter_list"></div></div>
+    <div id="filter_panel">
+        <h4>🔍 区域筛选 (多选)</h4>
+        <div class="filter-actions">
+            <button class="filter-btn" onclick="selectAllFilters()">✅ 选择所有</button>
+            <button class="filter-btn" onclick="clearAllFilters()">❌ 清除所有</button>
+        </div>
+        <div id="filter_list">
+            </div>
+    </div>
     
     <div id="style_toolbox">
         <h4>🎨 绘图样式板</h4>
-        <div class="tool-row"> <span>填充颜色</span> <input type="color" id="tool_color" value="#3388ff" onchange="updateStyleState()"> </div>
-        <div class="tool-row"> <span>不透明度</span> <input type="range" id="tool_opacity" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateStyleState()"> <span id="opacity_val" class="val-display">0.5</span> </div>
-        <div class="tool-row" id="row_width" style="display:none; border-top:1px dashed #eee; padding-top:10px;"> 
-            <span>道路宽度(米)</span> <input type="range" id="tool_width" min="2" max="50" step="1" value="10" oninput="document.getElementById('width_val').innerText=this.value"> <span id="width_val" class="val-display">10</span> 
+        <div class="tool-row">
+            <span>填充颜色</span> <input type="color" id="tool_color" value="#3388ff" onchange="updateStyleState()">
+        </div>
+        <div class="tool-row">
+            <span>不透明度</span> <input type="range" id="tool_opacity" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateStyleState()">
+            <span id="opacity_val" class="val-display">0.5</span>
+        </div>
+        <div class="tool-row" id="row_width" style="display:none; border-top:1px dashed #eee; padding-top:10px;">
+            <span>道路宽度(米)</span>
+            <input type="range" id="tool_width" min="2" max="50" step="1" value="10" oninput="document.getElementById('width_val').innerText=this.value">
+            <span id="width_val" class="val-display">10</span>
         </div>
     </div>
     
     <div id="mode_select_modal">
         <h3>🛠️ 选择绘制方案</h3>
-        <div class="mode-btn" onclick="startDraw('Freehand')"> <strong>方案一：手绘拖拽</strong> <span>按住左键拖动，松开即闭合。</span> </div>
-        <div class="mode-btn" onclick="startDraw('Polyline')"> <strong>方案二：点对点折线</strong> <span>点击定点，双击闭合。</span> </div>
-        <div class="mode-btn" onclick="startDraw('Road')"> <strong>方案三：道路 (条带)</strong> <span>绘制中心线，自动生成路面。</span> </div>
+        <div class="mode-btn" onclick="startDraw('Freehand')">
+            <strong>方案一：手绘拖拽</strong> <span>按住左键拖动，松开即闭合。</span>
+        </div>
+        <div class="mode-btn" onclick="startDraw('Polyline')">
+            <strong>方案二：点对点折线</strong> <span>点击定点，双击闭合。</span>
+        </div>
+        <div class="mode-btn" onclick="startDraw('Road')">
+            <strong>方案三：道路 (条带)</strong> <span>绘制中心线，自动生成路面。</span>
+        </div>
         <div style="margin-top:15px; font-size:12px; color:#999; cursor:pointer;" onclick="setMode('browse')">取消返回</div>
     </div>
     
     <div id="save_modal">
         <h4 id="modal_title">区域保存</h4>
-        <label class="checkbox-row"> <input type="checkbox" id="snap_toggle" checked> <strong>🧲 自动吸附贴合 (Snap)</strong> </label>
-        <div id="color_filter_box"> <span class="input-label">分析结果:</span> <select id="color_selector"> <option value="yellow">🟡 新拓展区</option> <option value="purple">🟣 单侧覆盖</option> <option value="pink">🌸 重叠核心</option> <option value="all">💠 所有区域</option> </select> </div>
-        <span class="input-label">归属层级:</span> 
-        <select id="type_selector" onchange="onTypeChanged()"> 
-            <option value="District">1级 - 区镇</option> 
-            <option value="Street" selected>2级 - 街道</option> 
-            <option value="Community">3级 - 建筑/小区</option> 
-            <option value="Custom">4级 - 自定义区域 (从属街道)</option> 
-            <option value="Road">🛣️ - 道路/高架 (从属街道)</option> 
-            <option value="Reconstruct">⚡ 重构图块</option> 
+        <label class="checkbox-row">
+            <input type="checkbox" id="snap_toggle" checked> <strong>🧲 自动吸附贴合 (Snap)</strong>
+        </label>
+
+        <div id="color_filter_box">
+            <span class="input-label">分析结果:</span>
+            <select id="color_selector">
+                <option value="yellow">🟡 新拓展区</option>
+                <option value="purple">🟣 单侧覆盖</option>
+                <option value="pink">🌸 重叠核心</option>
+                <option value="all">💠 所有区域</option>
+            </select>
+        </div>
+        
+        <span class="input-label">归属层级:</span>
+        <select id="type_selector" onchange="onTypeChanged()">
+            <option value="District">1级 - 区镇</option>
+            <option value="Street" selected>2级 - 街道</option>
+            <option value="Community">3级 - 建筑/小区</option>
+            <option value="Custom">4级 - 自定义区域 (从属街道)</option>
+            <option value="Road">🛣️ - 道路/高架 (从属街道)</option>
+            <option value="Reconstruct">⚡ 重构图块</option>
         </select>
-        <div id="parent_container"> <span class="input-label" id="parent_label">附着到:</span> <select id="parent_selector"><option value="">请选择...</option></select> </div>
-        <span class="input-label">高度 (米, 可选):</span> <input type="number" id="poly_height_input" placeholder="例如: 20 (高架桥)">
-        <span class="input-label">自定义标签 (可选):</span> <input type="text" id="poly_tag_input" placeholder="例如: 类目一, 重点区域...">
-        <span class="input-label">区域名称:</span> <input type="text" id="poly_name_input" placeholder="请输入名称">
-        <div class="btn-group"> <button id="btn_cancel" onclick="closeModal()">丢弃</button> <button id="btn_confirm" onclick="confirmSave()">保存</button> </div>
+
+        <div id="parent_container">
+            <span class="input-label" id="parent_label">附着到:</span> <select id="parent_selector"><option value="">请选择...</option></select>
+        </div>
+        
+        <span class="input-label">高度 (米, 可选):</span>
+        <input type="number" id="poly_height_input" placeholder="例如: 20 (高架桥)">
+        
+        <span class="input-label">自定义标签 (可选):</span>
+        <input type="text" id="poly_tag_input" placeholder="例如: 类目一, 重点区域...">
+
+        <span class="input-label">区域名称:</span>
+        <input type="text" id="poly_name_input" placeholder="请输入名称">
+        
+        <div class="btn-group">
+            <button id="btn_cancel" onclick="closeModal()">丢弃</button>
+            <button id="btn_confirm" onclick="confirmSave()">保存</button>
+        </div>
     </div>
 
-    <div id="search_modal"><h4>🔍 搜索区域</h4><input type="text" id="search_input" placeholder="输入区域名称..." style="margin-bottom: 15px;"><div class="btn-group"><button id="btn_search_cancel" onclick="closeSearchModal()">取消</button><button id="btn_search_confirm" onclick="confirmSearch()">确认</button></div></div>
+    <div id="search_modal">
+        <h4>🔍 搜索区域</h4>
+        <input type="text" id="search_input" placeholder="输入区域名称..." style="margin-bottom: 15px;">
+        <div class="btn-group">
+            <button id="btn_search_cancel" onclick="closeSearchModal()">取消</button>
+            <button id="btn_search_confirm" onclick="confirmSearch()">确认</button>
+        </div>
+    </div>
 
 <script>
+    // ================= 1. 全局配置与状态初始化 =================
+    
+    // 全局错误监听，将 Web 错误回传给 UE 的 Output Log
     window.onerror = function(msg, url, line)
     {
         console.log("UE_ERROR:JS_Error:" + msg + " Line:" + line);
     };
 
+    // 禁用右键菜单
     document.oncontextmenu = function()
     {
         return false;
     };
 
+    // 初始化地图，中心点设为上海
     var map = new BMapGL.Map("map_container");
     map.centerAndZoom(new BMapGL.Point(121.474, 31.233), 17);
     map.enableScrollWheelZoom(true);
     map.setTilt(0);
-    const MOVE_SPEED = 15;
-    var appState = { mode: 'browse', drawMethod: 'None', currentStyle: { color: '#3388ff', opacity: 0.5, textColor: '#ffffff' }, polygons: [], drawPath: [], tempPolyline: null, tempMouseLine: null, canSnapClose: false, snapHintCircle: null, analysisOverlays: [], tempResultData: [], isSaving: false, isDrawing: false, activeFilters: new Set(['District', 'Street', 'Community', 'Custom', 'Road', 'Reconstruct']) };
-    var ID_COUNTER = 1;
-    var DEFAULT_NAME_IDX = 1;
+    const MOVE_SPEED = 15; // WASD 移动速度
 
-    // --- Filter Logic ---
+    // 全局状态机对象
+    var appState =
+    {
+        mode: 'browse', // 当前模式: browse(浏览), edit(编辑), reconstruct(重构)
+        drawMethod: 'None', // 绘图方式: Freehand(手绘), Polyline(折线), Road(道路)
+        currentStyle: { color: '#3388ff', opacity: 0.5, textColor: '#ffffff' }, // 当前画笔样式
+        polygons: [], // 已保存的所有多边形数据
+        drawPath: [], // 当前正在绘制的路径点
+        tempPolyline: null, // 绘制过程中的临时线
+        tempMouseLine: null, // 跟随鼠标的橡皮筋线
+        canSnapClose: false, // 是否可以吸附闭合
+        snapHintCircle: null, // 吸附提示圈
+        analysisOverlays: [], // 分析结果的覆盖物
+        tempResultData: [], // 临时分析结果数据
+        isSaving: false, // 是否正在保存流程中
+        isDrawing: false, // 是否正在绘制中
+        // 当前激活的筛选器 (默认全选)
+        activeFilters: new Set(['District', 'Street', 'Community', 'Custom', 'Road', 'Reconstruct'])
+    };
+
+    var ID_COUNTER = 1; // ID 计数器
+    var DEFAULT_NAME_IDX = 1; // 默认名称计数器
+
+    // ================= 2. 筛选系统 (Filter System) =================
+    
+    // 更新筛选面板的 UI (根据当前存在的标签动态生成复选框)
     function updateFilterUI()
     {
         var panel = document.getElementById('filter_list');
         panel.innerHTML = "";
+
+        // 1. 基础类型筛选
         var baseTypes = ['District', 'Street', 'Community', 'Custom', 'Road', 'Reconstruct'];
         var labelMap = {'District':'区镇', 'Street':'街道', 'Community':'小区', 'Custom':'自定义', 'Road':'道路', 'Reconstruct':'重构'};
+        
         var group1 = document.createElement('div');
         group1.className = 'filter-group-title';
         group1.innerText = "基础类型";
         panel.appendChild(group1);
+
         baseTypes.forEach(type =>
         {
             createFilterCheckbox(panel, type, labelMap[type], type);
         });
+
+        // 2. 动态收集所有已存在的自定义标签
         var allTags = new Set();
         appState.polygons.forEach(p =>
         {
@@ -142,6 +584,7 @@
                 allTags.add(tag);
             }
         });
+
         if (allTags.size > 0)
         {
             var group2 = document.createElement('div');
@@ -155,6 +598,7 @@
         }
     }
 
+    // 创建单个筛选复选框
     function createFilterCheckbox(container, id, labelText, filterKey)
     {
         var row = document.createElement('label');
@@ -162,6 +606,7 @@
         var chk = document.createElement('input');
         chk.type = 'checkbox';
         chk.checked = appState.activeFilters.has(id);
+        
         chk.onchange = function()
         {
             if (chk.checked)
@@ -179,6 +624,7 @@
         container.appendChild(row);
     }
 
+    // 选择所有筛选器
     function selectAllFilters()
     {
         ['District', 'Street', 'Community', 'Custom', 'Road', 'Reconstruct'].forEach(t => appState.activeFilters.add(t));
@@ -194,6 +640,7 @@
         executeMultiFilter();
     }
 
+    // 清除所有筛选器
     function clearAllFilters()
     {
         appState.activeFilters.clear();
@@ -201,15 +648,19 @@
         executeMultiFilter();
     }
 
+    // 执行筛选逻辑 (显示/隐藏覆盖物)
     function executeMultiFilter()
     {
         appState.polygons.forEach(p =>
         {
             var type = p.geoJson.properties.customType;
             var tag = p.geoJson.properties.customTag;
+            
+            // 只要满足 类型选中 OR 标签选中，就显示 (并集逻辑)
             var showByType = appState.activeFilters.has(type);
             var showByTag = tag && appState.activeFilters.has(tag);
             var shouldShow = showByType || showByTag;
+
             var ovs = Array.isArray(p.overlay) ? p.overlay : [p.overlay];
             ovs.forEach(o =>
             {
@@ -222,6 +673,7 @@
                     o.hide();
                 }
             });
+            
             if (p.label)
             {
                 if (shouldShow)
@@ -236,7 +688,9 @@
         });
     }
 
-    // --- Core Logic ---
+    // ================= 3. 核心逻辑 (Core Logic) =================
+    
+    // 更新画笔颜色和透明度
     window.updateStyleState = function()
     {
         var col = document.getElementById('tool_color').value;
@@ -250,6 +704,7 @@
         }
     };
 
+    // 切换模式 (由 C++ 或 UI 调用)
     window.setMode = function(mode)
     {
         appState.mode = mode;
@@ -260,15 +715,18 @@
         appState.drawPath = [];
         appState.drawMethod = 'None';
         document.getElementById('mode_select_modal').style.display = 'none';
+        
         var toolbox = document.getElementById('style_toolbox');
         if (mode === 'edit')
         {
+            // 编辑模式：显示工具条，禁止地图拖拽，显示模式选择弹窗
             toolbox.style.display = 'block';
             map.disableDragging();
             document.getElementById('mode_select_modal').style.display = 'block';
         }
         else if (mode === 'reconstruct')
         {
+            // 重构模式：隐藏工具条，固定紫色画笔
             toolbox.style.display = 'none';
             map.disableDragging();
             appState.drawMethod = 'Freehand';
@@ -277,19 +735,23 @@
         }
         else
         {
+            // 浏览模式
             toolbox.style.display = 'none';
             map.enableDragging();
             map.setDefaultCursor("default");
             hideHint();
         }
+        // 隐藏道路宽度设置，只在 Road 模式显示
         document.getElementById('row_width').style.display = 'none';
     };
 
+    // 开始绘制 (选择方案后调用)
     window.startDraw = function(method)
     {
         appState.drawMethod = method;
         document.getElementById('mode_select_modal').style.display = 'none';
         updateStyleState();
+        
         if (method === 'Road')
         {
             document.getElementById('row_width').style.display = 'flex';
@@ -310,9 +772,11 @@
         map.setDefaultCursor("crosshair");
     };
 
-    // --- Inputs ---
+    // ================= 4. 输入交互 (Inputs) =================
     var keyState = { w: false, a: false, s: false, d: false };
     var isPanningLoopActive = false;
+
+    // 键盘监听 (Ctrl+F 搜索，WASD 移动)
     document.addEventListener('keydown', function(e)
     {
         if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F'))
@@ -345,6 +809,7 @@
         }
     });
     
+    // 搜索框回车监听
     document.getElementById('search_input').addEventListener('keydown', function(e)
     {
         if (e.key === 'Enter')
@@ -353,6 +818,7 @@
         }
     });
 
+    // 平滑移动循环
     function panMapLoop()
     {
         if (!keyState.w && !keyState.a && !keyState.s && !keyState.d)
@@ -368,18 +834,21 @@
         if (keyState.s) dy += MOVE_SPEED;
         if (keyState.a) dx -= MOVE_SPEED;
         if (keyState.d) dx += MOVE_SPEED;
+        
         var newCenterPx = new BMapGL.Pixel(centerPx.x + dx, centerPx.y + dy);
         var newCenterPt = map.pixelToPoint(newCenterPx);
         map.setCenter(newCenterPt, { noAnimation: true });
         requestAnimationFrame(panMapLoop);
     }
 
+    // 鼠标事件监听
     var container = document.getElementById('map_container');
     container.addEventListener('mousedown', function(e)
     {
         if (appState.mode === 'browse') return;
         if (e.target.closest('#save_modal') || e.target.closest('#mode_select_modal') || e.target.closest('#style_toolbox') || e.target.closest('#filter_panel') || e.target.closest('#search_modal')) return;
         if (e.button !== 0) return;
+        
         if (appState.drawMethod === 'Freehand')
         {
             handleFreehandDown(e);
@@ -422,6 +891,9 @@
         }
     });
 
+    // ================= 5. 绘图实现 (Drawing Impl) =================
+
+    // --- 手绘 (Freehand) ---
     function handleFreehandDown(e)
     {
         if (!appState.isDrawing)
@@ -453,6 +925,7 @@
         }
     }
 
+    // --- 折线/道路 (Polyline/Road) ---
     function handlePolylineDown(e)
     {
         var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
@@ -471,6 +944,7 @@
             {
                 map.removeOverlay(appState.tempMouseLine);
             }
+            // 橡皮筋效果
             appState.tempMouseLine = new BMapGL.Polyline([lastPt, mousePt], { strokeColor: appState.currentStyle.color, strokeWeight: 2, strokeStyle: 'dashed' });
             map.addOverlay(appState.tempMouseLine);
         }
@@ -496,14 +970,18 @@
         map.addOverlay(appState.tempPolyline);
     }
 
+    // 检查吸附 (Snap) 距离
     function checkSnapProximity(currentPt)
     {
+        // 道路模式不需要闭合吸附
         if (appState.drawMethod === 'Road') return;
+        
         if (appState.drawPath.length < 10) return;
         var startPt = appState.drawPath[0];
         var pixStart = map.pointToPixel(new BMapGL.Point(startPt.lng, startPt.lat));
         var pixCurrent = map.pointToPixel(new BMapGL.Point(currentPt.lng, currentPt.lat));
         var dist = Math.sqrt(Math.pow(pixStart.x - pixCurrent.x, 2) + Math.pow(pixStart.y - pixCurrent.y, 2));
+        
         if (dist < 20)
         {
             appState.canSnapClose = true;
@@ -524,6 +1002,7 @@
         }
     }
 
+    // 完成绘制
     function finishDraw()
     {
         if (appState.drawPath.length < 2)
@@ -531,19 +1010,26 @@
             clearTemp();
             return;
         }
+        
+        // 道路生成逻辑：使用 Turf.buffer 将线扩宽为面
         if (appState.drawMethod === 'Road')
         {
             var widthMeters = parseFloat(document.getElementById('tool_width').value) || 10;
             var widthKm = widthMeters / 1000.0;
+            
             var coords = appState.drawPath.map(p => [p.lng, p.lat]);
             var line = turf.lineString(coords);
             var buffered = turf.buffer(line, widthKm, {units: 'kilometers'});
+            
+            // 自动切换类型为 Road
             document.getElementById('type_selector').value = 'Road';
             onTypeChanged();
+            
             prepareSingleSave(buffered);
         }
         else
         {
+            // 普通闭合多边形逻辑
             if (appState.canSnapClose)
             {
                 appState.drawPath.push(appState.drawPath[0]);
@@ -555,6 +1041,7 @@
             var coords = appState.drawPath.map(p => [p.lng, p.lat]);
             var rawGeo = turf.polygon([coords]);
             var simpleGeo = turf.simplify(rawGeo, {tolerance: 0.00001, highQuality: false});
+            
             if (appState.mode === 'edit')
             {
                 prepareSingleSave(simpleGeo);
@@ -568,6 +1055,9 @@
         hideHint();
     }
 
+    // ================= 6. 拓扑与分析 (Topology & Analysis) =================
+    
+    // 吸附到已存在的顶点 (邻接吸附)
     function snapPolygon(inputGeo)
     {
         var existingPoints = [];
@@ -579,10 +1069,13 @@
                 existingPoints = existingPoints.concat(coords);
             }
         });
-        if (existingPoints.length === 0) return inputGeo;
+
+        if (existingPoints.length === 0) return inputGeo; 
+
         var targetPointsFC = turf.featureCollection(existingPoints.map(c => turf.point(c)));
-        var SNAP_THRESHOLD = 0.05;
+        var SNAP_THRESHOLD = 0.05; // 吸附阈值 50m
         var oldCoords = inputGeo.geometry.coordinates;
+        
         var newCoords = oldCoords.map(ring =>
         {
             var ringPoints = [];
@@ -590,13 +1083,16 @@
             {
                 var fromPt = turf.point(ptCoords);
                 var nearest = turf.nearestPoint(fromPt, targetPointsFC);
-                var dist = turf.distance(fromPt, nearest);
+                var dist = turf.distance(fromPt, nearest); 
                 var finalCoords = ptCoords;
+                
                 if (dist < SNAP_THRESHOLD)
                 {
                     console.log("⚡ Snapped!");
                     finalCoords = nearest.geometry.coordinates;
                 }
+                
+                // 去重
                 if (ringPoints.length > 0)
                 {
                     var lastPt = ringPoints[ringPoints.length - 1];
@@ -604,6 +1100,8 @@
                 }
                 ringPoints.push(finalCoords);
             });
+            
+            // 确保首尾闭合
             if (ringPoints.length > 2)
             {
                 var first = ringPoints[0];
@@ -615,10 +1113,12 @@
             }
             return ringPoints;
         });
+
         var snappedPoly = turf.polygon(newCoords, inputGeo.properties);
         return turf.cleanCoords(snappedPoly);
     }
 
+    // 区域分析逻辑 (计算重叠、差异)
     function executeAnalysis(polyX)
     {
         clearAnalysis();
@@ -633,6 +1133,7 @@
             var featX = turf.feature(polyX.geometry);
             var existFeats = appState.polygons.map(p => turf.feature(p.geoJson.geometry));
             var unionC = null;
+            
             for (let i = 0; i < existFeats.length; i++)
             {
                 for (let j = i + 1; j < existFeats.length; j++)
@@ -641,15 +1142,20 @@
                     if (inter) unionC = unionC ? turf.union(unionC, inter) : inter;
                 }
             }
+            
             var interXC = unionC ? turf.intersect(featX, unionC) : null;
             if (interXC) cacheResult(interXC, "#FFC0CB", 0.6, "重叠核心", false, 'pink');
+            
             var unionAll = existFeats[0];
             for (let i = 1; i < existFeats.length; i++) unionAll = turf.union(unionAll, existFeats[i]);
+            
             var interTotal = turf.intersect(featX, unionAll);
             var interPurple = (interTotal && interXC) ? turf.difference(interTotal, interXC) : interTotal;
             if (interPurple) cacheResult(interPurple, "#800080", 0.4, "单侧覆盖", false, 'purple');
+            
             var resE = turf.difference(featX, unionAll);
             if (resE) cacheResult(resE, "yellow", 0.3, "新拓展区", false, 'yellow');
+            
             showModal(true);
         }
         catch (e)
@@ -668,6 +1174,7 @@
             map.addOverlay(ov);
             appState.analysisOverlays.push(ov);
         });
+        
         if (!type) type = "Reconstruct";
         appState.tempResultData.push({geoJson:geo, color:col, opacity:op, rawType:type, isLine:line});
     }
@@ -679,24 +1186,61 @@
         showModal(false);
     }
 
+    // ================= 7. 弹窗与保存 (UI & Saving) =================
+    
     function showModal(isMulti)
     {
         var modal = document.getElementById('save_modal');
         var colorBox = document.getElementById('color_filter_box');
         var colorSel = document.getElementById('color_selector');
+        
         document.getElementById('poly_tag_input').value = "";
         document.getElementById('poly_height_input').value = "";
+        
         if (isMulti)
         {
             colorBox.style.display = 'block';
+            var hasYellow = appState.tempResultData.some(i => i.rawType === 'yellow');
+            var hasPurple = appState.tempResultData.some(i => i.rawType === 'purple');
+            var hasPink = appState.tempResultData.some(i => i.rawType === 'pink');
+            
+            updateOption(colorSel, 'yellow', hasYellow, "🟡 新拓展区");
+            updateOption(colorSel, 'purple', hasPurple, "🟣 单侧覆盖");
+            updateOption(colorSel, 'pink', hasPink, "🌸 重叠核心");
+            
+            if (hasYellow) colorSel.value = 'yellow';
+            else if (hasPurple) colorSel.value = 'purple';
+            else if (hasPink) colorSel.value = 'pink';
+            else colorSel.value = 'all';
         }
         else
         {
             colorBox.style.display = 'none';
         }
+        
         document.getElementById('poly_name_input').value = "我的区域" + DEFAULT_NAME_IDX;
         onTypeChanged();
         modal.style.display = 'block';
+    }
+
+    function updateOption(sel, val, hasData, label)
+    {
+        for (var i = 0; i < sel.options.length; i++)
+        {
+            if (sel.options[i].value === val)
+            {
+                if (!hasData)
+                {
+                    sel.options[i].text = label + " [无数据]";
+                    sel.options[i].disabled = true;
+                }
+                else
+                {
+                    sel.options[i].text = label;
+                    sel.options[i].disabled = false;
+                }
+            }
+        }
     }
 
     function closeModal()
@@ -704,7 +1248,8 @@
         document.getElementById('save_modal').style.display = 'none';
         clearAnalysis();
     }
-
+    
+    // 归属层级变化联动
     window.onTypeChanged = function()
     {
         var type = document.getElementById('type_selector').value;
@@ -712,6 +1257,7 @@
         var parentSelector = document.getElementById('parent_selector');
         parentSelector.innerHTML = '<option value="">请选择...</option>';
         var targetParentType = "";
+        
         if (type === 'District')
         {
             parentContainer.style.display = 'none';
@@ -727,6 +1273,7 @@
         }
         else if (type === 'Custom' || type === 'Road')
         {
+            // Custom 和 Road 都从属于 Street
             targetParentType = 'Street';
         }
         else
@@ -734,8 +1281,10 @@
             parentContainer.style.display = 'none';
             return;
         }
+        
         parentContainer.style.display = 'block';
         var parents = appState.polygons.filter(p => p.geoJson.properties.customType === targetParentType);
+        
         if (parents.length === 0)
         {
             var opt = document.createElement('option');
@@ -755,13 +1304,16 @@
             });
         }
     };
-
+    
+    // 点击保存按钮
     window.confirmSave = function()
     {
         if (appState.isSaving) return;
+        
         var nameInput = document.getElementById('poly_name_input').value || "未命名";
         var selectedType = document.getElementById('type_selector').value;
         var parentId = "";
+        
         if (selectedType !== 'District' && selectedType !== 'Reconstruct')
         {
             var pSel = document.getElementById('parent_selector');
@@ -772,14 +1324,17 @@
                 return;
             }
         }
+        
         if (nameInput === "我的区域" + DEFAULT_NAME_IDX)
         {
             DEFAULT_NAME_IDX++;
         }
+        
         var toSave = appState.tempResultData;
         var tagInput = document.getElementById('poly_tag_input').value.trim();
         var heightInput = parseFloat(document.getElementById('poly_height_input').value) || 0;
         var isSnapEnabled = document.getElementById('snap_toggle').checked;
+        
         if (isSnapEnabled)
         {
             toSave.forEach((item) =>
@@ -794,11 +1349,13 @@
                 catch (e) {}
             });
         }
+
         document.getElementById('save_modal').style.display = 'none';
         appState.isSaving = true;
         processSaveQueue(toSave, nameInput, selectedType, parentId, tagInput, heightInput, 0);
     };
 
+    // 递归处理保存队列 (防止消息拥堵)
     function processSaveQueue(list, baseName, typeStr, pid, tag, height, index)
     {
         if (index >= list.length)
@@ -810,13 +1367,16 @@
         var item = list[index];
         var finalName = (list.length > 1) ? (baseName + "_" + item.rawType + "_" + (index + 1)) : baseName;
         var txtColorToSave = appState.currentStyle.textColor || '#ffffff';
+        
         addPermanent(item.geoJson, item.color, item.opacity, item.isLine, finalName, typeStr, pid, txtColorToSave, tag, height);
+        
         setTimeout(function()
         {
             processSaveQueue(list, baseName, typeStr, pid, tag, height, index + 1);
         }, 300);
     }
-
+    
+    // 添加到地图并通知 C++
     function addPermanent(geo, col, op, line, name, typeStr, parentId, txtCol, tag, height)
     {
         var id = 'poly_' + (ID_COUNTER++);
@@ -824,9 +1384,23 @@
         if (!txtCol) txtCol = "yellow";
         if (!tag) tag = "";
         if (!height) height = 0;
-        geo.properties = { id: id, name: name, svCol: col, svOp: op, svLine: line, customType: typeStr, pid: parentId, svTxtCol: txtCol, customTag: tag, customHeight: height };
+
+        geo.properties = {
+            id: id,
+            name: name,
+            svCol: col,
+            svOp: op,
+            svLine: line,
+            customType: typeStr,
+            pid: parentId,
+            svTxtCol: txtCol,
+            customTag: tag,
+            customHeight: height
+        };
+        
         var polygonOverlays = [];
         var geoms = flattenGeo(geo);
+        
         geoms.forEach(path =>
         {
             var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4, strokeOpacity:op}) : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1});
@@ -838,21 +1412,66 @@
             map.addOverlay(ov);
             polygonOverlays.push(ov);
         });
+
         var label = null;
         try
         {
             var center = turf.centerOfMass(geo).geometry.coordinates;
             var labelPt = new BMapGL.Point(center[0], center[1]);
             label = new BMapGL.Label(name, { position: labelPt, offset: new BMapGL.Size(-20, -10) });
-            label.setStyle({ color: txtCol, backgroundColor: "transparent", border: "none", fontSize: "14px", fontWeight: "bold", textShadow: "1px 1px 2px black" });
+            label.setStyle({
+                color: txtCol,
+                backgroundColor: "transparent",
+                border: "none",
+                fontSize: "14px",
+                fontWeight: "bold",
+                textShadow: "1px 1px 2px black"
+            });
             map.addOverlay(label);
         }
-        catch (e) {}
+        catch (e) { }
+
         appState.polygons.push({ overlay: polygonOverlays, label: label, geoJson: geo });
+        
         updateFilterUI();
-        var randomTag = new Date().getTime();
+
+        var randomTag = new Date().getTime(); 
+        // 向 UE 发送消息，包含新增的 tag 和 height
         console.log("UE_ADD:" + id + "|" + name + "|" + typeStr + "|" + parentId + "|" + col + "|" + op + "|" + txtCol + "|" + tag + "|" + height + "|" + randomTag);
     }
+
+    // ================= 8. 存档读档接口 (Save/Load) =================
+
+    // 【新增】供 C++ 调用：请求所有地图数据
+    window.requestAllDataForSave = function()
+    {
+        var data = appState.polygons.map(p => p.geoJson);
+        var jsonStr = JSON.stringify(data);
+        console.log("UE_EXPORT_DATA:" + jsonStr);
+    };
+
+    // 供 C++ 调用：加载存档数据
+    window.importMap = function(json)
+    {
+        map.clearOverlays();
+        appState.polygons = [];
+        
+        // 兼容字符串或对象传入
+        var list = (typeof json === 'string') ? JSON.parse(json) : json;
+        
+        list.forEach((g, i) =>
+        {
+            var p = g.properties;
+            var h = p.customHeight || 0;
+            // 延时加载避免卡顿
+            setTimeout(() =>
+            {
+                addPermanent(g, p.svCol, p.svOp, p.svLine, p.name, p.customType, p.pid, p.svTxtCol, p.customTag, h);
+            }, i * 50);
+        });
+    };
+
+    // ================= 9. 搜索功能 (Search) =================
 
     function openSearchModal()
     {
@@ -884,6 +1503,7 @@
         }
     }
 
+    // 内部搜索逻辑，返回 true/false
     window.searchPoly = function(name)
     {
         var target = appState.polygons.find(p => p.geoJson.properties.name.includes(name));
@@ -894,6 +1514,8 @@
         }
         return false;
     };
+
+    // ================= 10. 辅助函数 (Helpers) =================
 
     function showHint(text)
     {
@@ -914,14 +1536,17 @@
         }
     }
 
+    // 供 C++ 调用：更新属性
     window.updatePolyAttributes = function(id, newName, newColor, newOpacity, newTxtCol)
     {
         var target = appState.polygons.find(p => p.geoJson.properties.id === id);
         if (!target) return;
+        
         target.geoJson.properties.name = newName;
         target.geoJson.properties.svCol = newColor;
         target.geoJson.properties.svOp = newOpacity;
         target.geoJson.properties.svTxtCol = newTxtCol;
+        
         var ovs = Array.isArray(target.overlay) ? target.overlay : [target.overlay];
         ovs.forEach(o =>
         {
@@ -937,6 +1562,7 @@
                 o.setStrokeOpacity(parseFloat(newOpacity));
             }
         });
+        
         if (target.label)
         {
             target.label.setContent(newName);
@@ -944,6 +1570,7 @@
         }
     };
 
+    // 供 C++ 调用：删除指定ID的区域
     window.deletePoly = function(id)
     {
         var targets = appState.polygons.filter(p => p.geoJson.properties.id === id);
@@ -975,24 +1602,14 @@
         appState.isDrawing = false;
     };
 
+    // 兼容旧接口
     window.exportMap = function(fname)
     {
         var data = appState.polygons.map(p => p.geoJson);
         console.log("UE_SAVE:" + fname + "|" + JSON.stringify(data));
     };
 
-    window.importMap = function(json)
-    {
-        map.clearOverlays();
-        appState.polygons = [];
-        var list = JSON.parse(json);
-        list.forEach((g, i) =>
-        {
-            var p = g.properties;
-            setTimeout(() => addPermanent(g, p.svCol, p.svOp, p.svLine, p.name, p.customType, p.pid, p.svTxtCol, p.customTag, p.customHeight), i * 50);
-        });
-    };
-
+    // 扁平化几何数据
     function flattenGeo(geo)
     {
         var coords = [];
@@ -1017,6 +1634,7 @@
         appState.tempResultData = [];
     }
 
+    // 聚焦并高亮指定区域
     window.focusPoly = function(id)
     {
         var targets = appState.polygons.filter(p => p.geoJson.properties.id === id);
@@ -1030,6 +1648,8 @@
                 {
                     var path = o.getPath();
                     if (path) allPoints = allPoints.concat(path);
+                    
+                    // 高亮动画
                     var oldColor = o.getStrokeColor();
                     o.setStrokeColor("red");
                     o.setStrokeWeight(4);
@@ -1051,6 +1671,7 @@
         }
     };
     
+    // 初始化筛选
     updateFilterUI();
 </script>
 </body>

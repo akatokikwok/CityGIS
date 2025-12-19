@@ -10,10 +10,40 @@
 #include "Components/EditableText.h"
 #include "Components/ScrollBox.h"
 #include "Components/Slider.h"
+#include "GISLoadDialog.h"
+#include "GISSaveDialog.h"
 #include "GISWebWidget.generated.h"
 
 class UGISPolyItem;
 class UWebBrowser;
+
+
+// 【新增】存档数据结构体 (对应单个存档文件)
+USTRUCT(BlueprintType)
+struct FGISSaveMetadata
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite)
+	FString ID;          // 唯一GUID
+
+	UPROPERTY(BlueprintReadWrite)
+	FString Name;        // 存档名
+
+	UPROPERTY(BlueprintReadWrite)
+	FString Description; // 备注
+
+	UPROPERTY(BlueprintReadWrite)
+	FString Date;        // 存档日期
+
+	UPROPERTY(BlueprintReadWrite)
+	FString FilePath;    // 文件物理路径 (仅读取时填充)
+    
+	// 注意：具体的 Polygon JSON 数据不在这里显示，只在底层读写
+};
+
+
+
 
 // 【修改】增加 ParentID 参数 (共4个参数)
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnAddPolyItem, FString, ID, FString, Name, FString, Type, FString,
@@ -24,6 +54,29 @@ class CITYGIS_API UGISWebWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
+public:
+	// --- 存档/读写核心接口 ---
+
+	// --- 核心功能 ---
+	UFUNCTION(BlueprintCallable) void RequestSaveDataFromWeb(); // 点击主界面"存档"按钮
+	UFUNCTION(BlueprintCallable) void OpenLoadDialog();         // 点击主界面"读档"按钮
+	
+	// 2. 执行保存：当JS数据传回，且用户在弹窗填完信息后调用此函数写入磁盘
+	// GeoJsonData: 从JS获取的原始数据
+	// SaveName, SaveDesc: 用户在UI输入的
+	UFUNCTION(BlueprintCallable)
+	void ExecuteSaveToFile(FString GeoJsonData, FString SaveName, FString SaveDesc);
+
+	void ExecuteLoadFromFile(FString FilePath);
+	
+	// 3. 获取所有存档列表：用于读档弹窗显示
+	UFUNCTION(BlueprintCallable)
+	TArray<FGISSaveMetadata> GetAllSaveFiles();
+
+	// 4. 执行读档：用户在列表选中某一项后调用
+	UFUNCTION(BlueprintCallable)
+	void LoadSaveFile(FString FilePath);
+	
 protected:
 	UPROPERTY(BlueprintAssignable)
 	FOnAddPolyItem OnAddPolyItemDelegate;
@@ -53,6 +106,16 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Config")
 	TSubclassOf<UGISPolyItem> PolyItemClass;
 
+	// --- 【新增】弹窗类配置 ---
+
+	// UGISSaveDialog类型的蓝图控件
+	UPROPERTY(EditAnywhere, Category = "Config")
+	TSubclassOf<UGISSaveDialog> SaveDialogClass;
+
+	// UGISLoadDialog类型的蓝图控件
+	UPROPERTY(EditAnywhere, Category = "Config")
+	TSubclassOf<UGISLoadDialog> LoadDialogClass;
+	
 	// 【新增 UI】编辑弹窗容器 (Overlay 或 CanvasPanel)
 	UPROPERTY(meta = (BindWidget))
 	UWidget* Edit_Dialog_Overlay;
@@ -79,6 +142,11 @@ protected:
 	UPROPERTY(meta = (BindWidget)) USlider* Slider_Text_R;
 	UPROPERTY(meta = (BindWidget)) USlider* Slider_Text_G;
 	UPROPERTY(meta = (BindWidget)) USlider* Slider_Text_B;
+
+	// 【新增】蓝图事件：当JS返回了全部地图数据，通知蓝图打开“保存详情输入框”
+	// 参数：RawJsonData (地图原始数据)
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnMapDataReceivedForSave(const FString& RawJsonData);
 	
 public:
 	virtual void NativeConstruct() override;
