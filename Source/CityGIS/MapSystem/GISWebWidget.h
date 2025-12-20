@@ -88,9 +88,13 @@ protected:
 	// 两个列表容器
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
 	UScrollBox* List_Admin;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
 	UScrollBox* List_Reconstruct;
-
+	// 在 protected 区域，List_Reconstruct 下方添加：
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
+	UScrollBox* List_Road;
+	
 	// --- 资源引用 ---
 	// 在蓝图 Class Defaults 里设置这个，指向 WBP_PolyItem
 	UPROPERTY(EditAnywhere, Category = "Config")

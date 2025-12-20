@@ -358,6 +358,14 @@ void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, F
 			List_Admin->AddChild(NewItem);
 		}
 	}
+	else if (Type == "Road") 
+	{
+		// 【新增】道路类型挂载到 List_Road
+		if (List_Road)
+		{
+			List_Road->AddChild(NewItem);
+		}
+	}
 	// 【修改】Road 和 Custom 一样，都是子级元素，尝试挂载到 ParentID (街道) 下
 	else if (Type == "Street" || Type == "Community" || Type == "Custom" || Type == "Road") 
 	{
