@@ -91,16 +91,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
 	UScrollBox* List_Reconstruct;
 
-	// UI 控件
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
-	UEditableText* Input_SaveName;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
-	UComboBoxString* Combo_Files;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (BindWidget))
-	UComboBoxString* Combo_Filter;
-
 	// --- 资源引用 ---
 	// 在蓝图 Class Defaults 里设置这个，指向 WBP_PolyItem
 	UPROPERTY(EditAnywhere, Category = "Config")
