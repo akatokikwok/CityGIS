@@ -79,9 +79,21 @@ void UGISLoadDialog::RefreshList()
 
 void UGISLoadDialog::OnItemSelected(UGISFileItem* Item)
 {
-    if (SelectedItem) SelectedItem->SetSelected(false);
+    if (SelectedItem) 
+    {
+        SelectedItem->SetSelected(false);
+    }
     SelectedItem = Item;
-    if (SelectedItem) SelectedItem->SetSelected(true);
+    if (SelectedItem) 
+    {
+        SelectedItem->SetSelected(true);
+        
+        // 【新增】更新备注显示 (需确保 UMG 里有 Txt_DescPreview 绑定)
+        if (Txt_DescPreview)
+        {
+            Txt_DescPreview->SetText(FText::FromString(SelectedItem->GetSaveData().Description));
+        }
+    }
 }
 
 void UGISLoadDialog::OnLoadClicked()

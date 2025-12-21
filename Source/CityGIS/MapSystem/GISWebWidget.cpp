@@ -48,6 +48,24 @@ void UGISWebWidget::NativeConstruct()
 	{
 		Slider_Text_B->OnValueChanged.AddUniqueDynamic(this, &UGISWebWidget::OnTextColorSliderChanged);
 	}
+
+	// 【新增】初始化上海区划代码
+	DistrictNameMap.Add("310101", TEXT("黄浦区"));
+	DistrictNameMap.Add("310104", TEXT("徐汇区"));
+	DistrictNameMap.Add("310105", TEXT("长宁区"));
+	DistrictNameMap.Add("310106", TEXT("静安区"));
+	DistrictNameMap.Add("310107", TEXT("普陀区"));
+	DistrictNameMap.Add("310109", TEXT("虹口区"));
+	DistrictNameMap.Add("310110", TEXT("杨浦区"));
+	DistrictNameMap.Add("310112", TEXT("闵行区"));
+	DistrictNameMap.Add("310113", TEXT("宝山区"));
+	DistrictNameMap.Add("310114", TEXT("嘉定区"));
+	DistrictNameMap.Add("310115", TEXT("浦东新区"));
+	DistrictNameMap.Add("310116", TEXT("金山区"));
+	DistrictNameMap.Add("310117", TEXT("松江区"));
+	DistrictNameMap.Add("310118", TEXT("青浦区"));
+	DistrictNameMap.Add("310120", TEXT("奉贤区"));
+	DistrictNameMap.Add("310151", TEXT("崇明区"));
 }
 
 void UGISWebWidget::ActivateReconstructionTool()
@@ -147,33 +165,34 @@ void UGISWebWidget::ProcessAddPolyItem(FString ID, FString Name, FString Type, F
 		return;
 	}
 
-	// 【核心逻辑】自动构建父级
-	// 如果是街道且没有父级，尝试根据 Tag (行政区代码) 创建父级
+	// 【核心修复】自动构建父级逻辑
+	// 如果是街道(Street)且没有指定父级(None)，则尝试根据 Tag(行政区代码) 自动创建/查找父级
 	if (Type == "Street" && (ParentID == "None" || ParentID.IsEmpty()) && !Tag.IsEmpty())
 	{
-		// 假设 Tag 是 310101 (黄浦区)
-		FString DistrictID = "District_" + Tag; // 生成父级ID
-
-		// 检查父级是否存在
+		// 构造父级ID，例如 District_310101
+		FString DistrictID = "District_" + Tag; 
+        
+		// 检查这个父级是否已经存在
 		if (!WidgetMap.Contains(DistrictID))
 		{
-			// 创建父级 (虚拟的，没有几何信息)
+			// 不存在则创建一个新的 District 节点
 			UGISPolyItem* ParentItem = CreateWidget<UGISPolyItem>(this, PolyItemClass);
 			if (ParentItem)
 			{
-				// 父级名字暂时用 Tag 代替，实际可以查表
-				FString DistrictName = FString::Printf(TEXT("行政区_%s"), *Tag);
-				ParentItem->SetupItem(DistrictID, DistrictName, "District", "None", "#808080", 1.0f, "#FFFFFF", "", 0,
-				                      this);
+				// 【关键修改】这里调用 GetDistrictNameByCode 获取真实中文名
+				FString RealName = GetDistrictNameByCode(Tag);
+                
+				// 初始化父级节点
+				ParentItem->SetupItem(DistrictID, RealName, "District", "None", "#808080", 1.0f, "#FFFFFF", "", 0, this);
 				WidgetMap.Add(DistrictID, ParentItem);
-
+                
 				if (List_Admin)
 				{
 					List_Admin->AddChild(ParentItem);
 				}
 			}
 		}
-		// 修正当前项的 ParentID
+		// 将当前街道的父级ID修正为这个区ID
 		ParentID = DistrictID;
 	}
 
@@ -405,6 +424,15 @@ void UGISWebWidget::UpdateTextColorUI(FLinearColor Color)
 	if (Slider_Text_B) Slider_Text_B->SetValue(Color.B);
 	if (TextColor_Preview) TextColor_Preview->SetBrushColor(Color);
 	if (Edit_Input_TextColor) Edit_Input_TextColor->SetText(FText::FromString("#" + Color.ToFColor(true).ToHex()));
+}
+
+FString UGISWebWidget::GetDistrictNameByCode(const FString& Code)
+{
+	if (DistrictNameMap.Contains(Code))
+	{
+		return DistrictNameMap[Code];
+	}
+	return FString::Printf(TEXT("行政区_%s"), *Code); // 兜底显示
 }
 
 void UGISWebWidget::SetMode(FString ModeName)

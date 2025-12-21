@@ -21,8 +21,10 @@ public:
     
 	// 选中状态切换
 	void SetSelected(bool bSelected);
+
 	FString GetFilePath() const { return SaveData.FilePath; }
 
+	const FGISSaveMetadata& GetSaveData() const { return SaveData; }
 protected:
 	UPROPERTY(meta = (BindWidget)) UTextBlock* Txt_Name;
 	UPROPERTY(meta = (BindWidget)) UTextBlock* Txt_Date;

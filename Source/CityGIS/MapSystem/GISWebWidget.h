@@ -126,11 +126,16 @@ private:
     void UpdateColorUI(FLinearColor Color);
     void UpdateTextColorUI(FLinearColor Color);
 
-   
+    // 【新增】根据区代码获取真实中文名 (如 310101 -> 黄浦区)
+    FString GetDistrictNameByCode(const FString& Code);
+    
     UPROPERTY() TMap<FString, UGISPolyItem*> WidgetMap = {};
     
     UPROPERTY() TWeakObjectPtr<UGISPolyItem> CurrentEditingItem;
     
     FString LastProcessedID;
     double LastLogTime = 0.0f;
+
+    // 【新增】区划代码映射表
+    TMap<FString, FString> DistrictNameMap;
 };

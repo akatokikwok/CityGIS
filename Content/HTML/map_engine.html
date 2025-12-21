@@ -13,6 +13,7 @@
             margin: 0;
             padding: 0;
             font-family: "微软雅黑";
+            outline: none; /* 去除聚焦边框 */
         }
 
         .anchorBL, .BMap_cpyCtrl
@@ -371,7 +372,7 @@
     <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=REwU3A6aymH7RUEsO3QUhzietfLDDfRk"></script>
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 </head>
-<body>
+<body tabindex="0">
     <div id="map_container"></div>
     <div id="hint_bar">操作提示...</div>
 
@@ -397,6 +398,13 @@
             <span>道路宽度(米)</span>
             <input type="range" id="tool_width" min="2" max="50" step="1" value="10" oninput="document.getElementById('width_val').innerText=this.value">
             <span id="width_val" class="val-display">10</span>
+        </div>
+        <div class="tool-row" style="border-top:1px dashed #eee; margin-top:10px; padding-top:10px; flex-direction:column; align-items:stretch;">
+            <span style="font-size:12px; margin-bottom:5px; color:#333;">📥 导入行政区 (自动描边)</span>
+            <div style="display:flex; gap:5px;">
+                <input type="text" id="boundary_input" placeholder="例: 上海市静安区" style="flex:1; padding:4px; font-size:12px;">
+                <button onclick="fetchBoundary()" style="padding:4px 8px; cursor:pointer; background:#007bff; color:white; border:none; border-radius:4px; font-size:12px;">生成</button>
+            </div>
         </div>
     </div>
     
@@ -451,8 +459,8 @@
         <input type="number" id="poly_height_input" placeholder="例如: 20 (高架桥)">
         
         <span class="input-label">自定义标签 (可选):</span>
-        <input type="text" id="poly_tag_input" placeholder="例如: 商业区...">
-        
+        <input type="text" id="poly_tag_input" placeholder="例如: 类目一, 重点区域...">
+
         <span class="input-label">区域名称:</span>
         <input type="text" id="poly_name_input" placeholder="请输入名称">
         
@@ -482,49 +490,80 @@
         return false;
     };
 
+    // 【新增】上海行政区划代码映射表
+    const DISTRICT_CODE_MAP = {
+        "310101": "黄浦区",
+        "310104": "徐汇区",
+        "310105": "长宁区",
+        "310106": "静安区",
+        "310107": "普陀区",
+        "310109": "虹口区",
+        "310110": "杨浦区",
+        "310112": "闵行区",
+        "310113": "宝山区",
+        "310114": "嘉定区",
+        "310115": "浦东新区",
+        "310116": "金山区",
+        "310117": "松江区",
+        "310118": "青浦区",
+        "310120": "奉贤区",
+        "310151": "崇明区"
+    };
+
     var map = new BMapGL.Map("map_container");
     map.centerAndZoom(new BMapGL.Point(121.474, 31.233), 17);
     map.enableScrollWheelZoom(true);
     map.setTilt(0);
     const MOVE_SPEED = 15;
+    
     var appState = { mode: 'browse', drawMethod: 'None', currentStyle: { color: '#3388ff', opacity: 0.5, textColor: '#ffffff' }, polygons: [], drawPath: [], tempPolyline: null, tempMouseLine: null, canSnapClose: false, snapHintCircle: null, analysisOverlays: [], tempResultData: [], isSaving: false, isDrawing: false, activeFilters: new Set(['District', 'Street', 'Community', 'Custom', 'Road', 'Reconstruct']) };
     var ID_COUNTER = 1;
     var DEFAULT_NAME_IDX = 1;
     var tempHighlighter = null; 
     var highlightAnimReq = null;
 
+    // --- Filter Logic ---
     function updateFilterUI()
     {
         var panel = document.getElementById('filter_list');
         panel.innerHTML = "";
+        
         var baseTypes = ['District', 'Street', 'Community', 'Custom', 'Road', 'Reconstruct'];
         var labelMap = {'District':'区镇', 'Street':'街道', 'Community':'小区', 'Custom':'自定义', 'Road':'道路', 'Reconstruct':'重构'};
+        
         var group1 = document.createElement('div');
         group1.className = 'filter-group-title';
         group1.innerText = "基础类型";
         panel.appendChild(group1);
-        baseTypes.forEach(type =>
-        {
-            createFilterCheckbox(panel, type, labelMap[type], type);
+        
+        baseTypes.forEach(type => 
+        { 
+            createFilterCheckbox(panel, type, labelMap[type], type); 
         });
+        
         var allTags = new Set();
-        appState.polygons.forEach(p =>
-        {
-            var tag = p.geoJson.properties.customTag;
-            if (tag && tag.trim() !== "")
+        appState.polygons.forEach(p => 
+        { 
+            var tag = p.geoJson.properties.customTag; 
+            if(tag && tag.trim() !== "") 
             {
-                allTags.add(tag);
+                allTags.add(tag); 
             }
         });
+        
         if (allTags.size > 0)
         {
             var group2 = document.createElement('div');
             group2.className = 'filter-group-title';
             group2.innerText = "自定义标签";
             panel.appendChild(group2);
-            allTags.forEach(tag =>
-            {
-                createFilterCheckbox(panel, tag, tag, 'TAG:' + tag);
+            
+            allTags.forEach(tag => 
+            { 
+                // 【核心修复】强制转String，确保匹配
+                var keyStr = String(tag).trim();
+                var displayName = DISTRICT_CODE_MAP[keyStr] || tag;
+                createFilterCheckbox(panel, tag, displayName, 'TAG:' + tag); 
             });
         }
     }
@@ -533,21 +572,24 @@
     {
         var row = document.createElement('label');
         row.className = 'filter-item';
+        
         var chk = document.createElement('input');
         chk.type = 'checkbox';
         chk.checked = appState.activeFilters.has(id);
+        
         chk.onchange = function()
         {
-            if (chk.checked)
+            if (chk.checked) 
             {
-                appState.activeFilters.add(id);
+                appState.activeFilters.add(id); 
             }
-            else
+            else 
             {
                 appState.activeFilters.delete(id);
             }
             executeMultiFilter();
         };
+        
         row.appendChild(chk);
         row.appendChild(document.createTextNode(labelText));
         container.appendChild(row);
@@ -556,12 +598,12 @@
     function selectAllFilters()
     {
         ['District', 'Street', 'Community', 'Custom', 'Road', 'Reconstruct'].forEach(t => appState.activeFilters.add(t));
-        appState.polygons.forEach(p =>
-        {
-            var tag = p.geoJson.properties.customTag;
-            if (tag)
+        appState.polygons.forEach(p => 
+        { 
+            var tag = p.geoJson.properties.customTag; 
+            if (tag) 
             {
-                appState.activeFilters.add(tag);
+                appState.activeFilters.add(tag); 
             }
         });
         updateFilterUI();
@@ -577,52 +619,57 @@
 
     function executeMultiFilter()
     {
-        appState.polygons.forEach(p =>
-        {
-            var type = p.geoJson.properties.customType;
-            var tag = p.geoJson.properties.customTag;
-            var showByType = appState.activeFilters.has(type);
-            var showByTag = tag && appState.activeFilters.has(tag);
-            var shouldShow = showByType || showByTag;
-            var ovs = Array.isArray(p.overlay) ? p.overlay : [p.overlay];
-            ovs.forEach(o =>
-            {
-                if (shouldShow)
+        appState.polygons.forEach(p => 
+        { 
+            var type = p.geoJson.properties.customType; 
+            var tag = p.geoJson.properties.customTag; 
+            var showByType = appState.activeFilters.has(type); 
+            var showByTag = tag && appState.activeFilters.has(tag); 
+            var shouldShow = showByType || showByTag; 
+            
+            var ovs = Array.isArray(p.overlay) ? p.overlay : [p.overlay]; 
+            ovs.forEach(o => 
+            { 
+                if (shouldShow) 
                 {
-                    o.show();
+                    o.show(); 
                 }
-                else
+                else 
                 {
-                    o.hide();
+                    o.hide(); 
                 }
-            });
-            if (p.label)
-            {
-                if (shouldShow)
+            }); 
+            
+            if (p.label) 
+            { 
+                if (shouldShow) 
                 {
-                    p.label.show();
+                    p.label.show(); 
                 }
-                else
+                else 
                 {
-                    p.label.hide();
+                    p.label.hide(); 
                 }
-            }
+            } 
         });
     }
 
+    // --- Core Logic ---
     window.updateStyleState = function()
     {
         var col = document.getElementById('tool_color').value;
         var op = parseFloat(document.getElementById('tool_opacity').value);
         document.getElementById('opacity_val').innerText = op;
+        
         appState.currentStyle.color = col;
         appState.currentStyle.opacity = op;
-        if (appState.isDrawing && appState.tempPolyline)
+        
+        if (appState.isDrawing && appState.tempPolyline) 
         {
             appState.tempPolyline.setStrokeColor(col);
         }
     };
-
+    
     window.setMode = function(mode)
     {
         appState.mode = mode;
@@ -632,8 +679,29 @@
         appState.isDrawing = false;
         appState.drawPath = [];
         appState.drawMethod = 'None';
+        
+        // 【核心修复】WASD 焦点问题 - 终极解决方案
+        // 1. 重置按键状态，防止卡死
+        keyState = { w: false, a: false, s: false, d: false };
+        isPanningLoopActive = false;
+        
+        // 2. 移除当前按钮的焦点，防止回车键误触按钮
+        if (document.activeElement) 
+        {
+            document.activeElement.blur();
+        }
+        
+        // 3. 强制让 body 或 container 获取焦点，确保能接收 keydown
+        // 增加 setTimeout 确保在 UE5 UI 切换完成后执行
+        setTimeout(function()
+        {
+            document.body.focus();
+            window.focus();
+        }, 100);
+
         document.getElementById('mode_select_modal').style.display = 'none';
         var toolbox = document.getElementById('style_toolbox');
+        
         if (mode === 'edit')
         {
             toolbox.style.display = 'block';
@@ -643,7 +711,7 @@
         else if (mode === 'reconstruct')
         {
             toolbox.style.display = 'none';
-            map.disableDragging();
+            map.disableDragging(); // 保持禁止鼠标拖拽，防止与手绘冲突
             appState.drawMethod = 'Freehand';
             appState.currentStyle = { color: '#800080', opacity: 0.5, textColor: '#ffffff' };
             showHint("WASD移动 | 左键手绘 | 重构模式");
@@ -658,98 +726,112 @@
         document.getElementById('row_width').style.display = 'none';
     };
 
-    window.startDraw = function(method)
-    {
-        appState.drawMethod = method;
-        document.getElementById('mode_select_modal').style.display = 'none';
-        updateStyleState();
-        if (method === 'PolylineRoad' || method === 'FreehandRoad')
-        {
-            document.getElementById('row_width').style.display = 'flex';
-            if (method === 'FreehandRoad')
+    window.startDraw = function(method) 
+    { 
+        appState.drawMethod = method; 
+        document.getElementById('mode_select_modal').style.display = 'none'; 
+        updateStyleState(); 
+        
+        // 再次强制归还焦点
+        document.body.focus();
+        
+        if (method === 'PolylineRoad' || method === 'FreehandRoad') 
+        { 
+            document.getElementById('row_width').style.display = 'flex'; 
+            if (method === 'FreehandRoad') 
             {
-                showHint("【左键拖拽】绘制中心线 | 松开生成道路");
+                showHint("【左键拖拽】绘制中心线 | 松开生成道路"); 
             }
-            else
+            else 
             {
-                showHint("【左键点击】定点 | 【双击】生成道路");
+                showHint("【左键点击】定点 | 【双击】生成道路"); 
             }
-        }
-        else
-        {
-            document.getElementById('row_width').style.display = 'none';
-            if (method === 'Freehand')
+        } 
+        else 
+        { 
+            document.getElementById('row_width').style.display = 'none'; 
+            if (method === 'Freehand') 
             {
-                showHint("【WASD】移动 | 【左键拖拽】绘制");
+                showHint("【WASD】移动 | 【左键拖拽】绘制"); 
             }
-            else
+            else 
             {
-                showHint("【WASD】移动 | 【左键点击】定点 | 【双击】闭合");
+                showHint("【WASD】移动 | 【左键点击】定点 | 【双击】闭合"); 
             }
-        }
-        map.setDefaultCursor("crosshair");
+        } 
+        map.setDefaultCursor("crosshair"); 
     };
 
+    // --- Inputs ---
     var keyState = { w: false, a: false, s: false, d: false };
     var isPanningLoopActive = false;
+    
+    // 【核心修复】使用 Capture (捕获) 阶段监听键盘事件，确保优先权
     document.addEventListener('keydown', function(e)
     {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F'))
-        {
-            e.preventDefault();
-            openSearchModal();
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) 
+        { 
+            e.preventDefault(); 
+            openSearchModal(); 
         }
-        if (e.target.tagName === 'INPUT')
+        
+        if (e.target.tagName === 'INPUT') 
         {
             return;
         }
+        
         var k = e.key.toLowerCase();
         if (['w','a','s','d'].includes(k))
         {
             keyState[k] = true;
-            if (!isPanningLoopActive)
-            {
-                isPanningLoopActive = true;
-                panMapLoop();
+            if (!isPanningLoopActive) 
+            { 
+                isPanningLoopActive = true; 
+                panMapLoop(); 
             }
         }
-    });
+    }, true); // true = Use Capture Phase
     
-    document.addEventListener('keyup', function(e)
-    {
-        var k = e.key.toLowerCase();
-        if (['w','a','s','d'].includes(k))
+    document.addEventListener('keyup', function(e) 
+    { 
+        var k = e.key.toLowerCase(); 
+        if (['w','a','s','d'].includes(k)) 
         {
-            keyState[k] = false;
+            keyState[k] = false; 
         }
-    });
+    }, true);
     
-    document.getElementById('search_input').addEventListener('keydown', function(e)
-    {
-        if (e.key === 'Enter')
+    document.getElementById('search_input').addEventListener('keydown', function(e) 
+    { 
+        if (e.key === 'Enter') 
         {
-            confirmSearch();
+            confirmSearch(); 
         }
     });
 
     function panMapLoop()
     {
-        if (!keyState.w && !keyState.a && !keyState.s && !keyState.d)
-        {
-            isPanningLoopActive = false;
-            return;
+        if (!keyState.w && !keyState.a && !keyState.s && !keyState.d) 
+        { 
+            isPanningLoopActive = false; 
+            return; 
         }
+        
         var centerPt = map.getCenter();
         var centerPx = map.pointToPixel(centerPt);
-        var dx = 0;
-        var dy = 0;
-        if (keyState.w) dy -= MOVE_SPEED;
+        var dx = 0; var dy = 0;
+        
+        if (keyState.w) dy -= MOVE_SPEED; 
         if (keyState.s) dy += MOVE_SPEED;
-        if (keyState.a) dx -= MOVE_SPEED;
+        if (keyState.a) dx -= MOVE_SPEED; 
         if (keyState.d) dx += MOVE_SPEED;
+        
         var newCenterPx = new BMapGL.Pixel(centerPx.x + dx, centerPx.y + dy);
         var newCenterPt = map.pixelToPoint(newCenterPx);
+        
+        // 即使 disableDragging()，setCenter({noAnimation: true}) 也是生效的
         map.setCenter(newCenterPt, { noAnimation: true });
+        
         requestAnimationFrame(panMapLoop);
     }
 
@@ -760,535 +842,509 @@
         if (e.target.closest('#save_modal') || e.target.closest('#mode_select_modal') || e.target.closest('#style_toolbox') || e.target.closest('#filter_panel') || e.target.closest('#search_modal')) return;
         if (e.button !== 0) return;
         
-        if (appState.drawMethod === 'Freehand' || appState.drawMethod === 'FreehandRoad')
+        document.body.focus(); // 聚焦
+        
+        if (appState.drawMethod === 'Freehand' || appState.drawMethod === 'FreehandRoad') 
         {
             handleFreehandDown(e);
         }
-        else if (appState.drawMethod === 'Polyline' || appState.drawMethod === 'PolylineRoad')
+        else if (appState.drawMethod === 'Polyline' || appState.drawMethod === 'PolylineRoad') 
         {
             handlePolylineDown(e);
         }
     });
-
+    
     container.addEventListener('mousemove', function(e)
     {
         if (appState.mode === 'browse') return;
-        if (appState.drawMethod === 'Freehand' || appState.drawMethod === 'FreehandRoad')
+        if (appState.drawMethod === 'Freehand' || appState.drawMethod === 'FreehandRoad') 
         {
             handleFreehandMove(e);
         }
-        else if (appState.drawMethod === 'Polyline' || appState.drawMethod === 'PolylineRoad')
+        else if (appState.drawMethod === 'Polyline' || appState.drawMethod === 'PolylineRoad') 
         {
             handlePolylineMove(e);
         }
     });
-
+    
     container.addEventListener('mouseup', function(e)
     {
         if (appState.mode === 'browse') return;
         if (e.button !== 0) return;
-        if (appState.drawMethod === 'Freehand' || appState.drawMethod === 'FreehandRoad')
+        if (appState.drawMethod === 'Freehand' || appState.drawMethod === 'FreehandRoad') 
         {
             handleFreehandUp(e);
         }
     });
-
+    
     container.addEventListener('dblclick', function(e)
     {
         if (appState.mode === 'browse') return;
-        if (appState.drawMethod === 'Polyline' || appState.drawMethod === 'PolylineRoad')
+        if (appState.drawMethod === 'Polyline' || appState.drawMethod === 'PolylineRoad') 
         {
             finishPolyline();
         }
     });
 
-    function handleFreehandDown(e)
-    {
-        if (!appState.isDrawing)
-        {
-            appState.isDrawing = true;
-            var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
-            appState.drawPath = [pt];
-            appState.canSnapClose = false;
-        }
-    }
-
-    function handleFreehandMove(e)
-    {
-        if (appState.isDrawing)
-        {
-            var currentPt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
-            appState.drawPath.push(currentPt);
-            redrawTempPolyline();
-            checkSnapProximity(currentPt);
-        }
-    }
-
-    function handleFreehandUp(e)
-    {
-        if (appState.isDrawing)
-        {
-            appState.isDrawing = false;
-            finishDraw();
-        }
-    }
-
-    function handlePolylineDown(e)
-    {
-        var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
-        appState.drawPath.push(pt);
-        redrawTempPolyline();
-        appState.isDrawing = true;
-    }
-
-    function handlePolylineMove(e)
-    {
-        if (appState.isDrawing && appState.drawPath.length > 0)
-        {
-            var lastPt = appState.drawPath[appState.drawPath.length - 1];
-            var mousePt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY));
-            if (appState.tempMouseLine)
-            {
-                map.removeOverlay(appState.tempMouseLine);
-            }
-            appState.tempMouseLine = new BMapGL.Polyline([lastPt, mousePt], { strokeColor: appState.currentStyle.color, strokeWeight: 2, strokeStyle: 'dashed' });
-            map.addOverlay(appState.tempMouseLine);
-        }
-    }
-
-    function finishPolyline()
-    {
-        if (appState.drawPath.length < 2) return;
-        if (appState.tempMouseLine)
-        {
-            map.removeOverlay(appState.tempMouseLine);
-        }
-        finishDraw();
-    }
-
-    function redrawTempPolyline()
-    {
-        if (appState.tempPolyline)
-        {
-            map.removeOverlay(appState.tempPolyline);
-        }
-        appState.tempPolyline = new BMapGL.Polyline(appState.drawPath, { strokeColor: appState.currentStyle.color, strokeWeight: 2 });
-        map.addOverlay(appState.tempPolyline);
-    }
-
-    function checkSnapProximity(currentPt)
-    {
-        if (appState.drawMethod.includes('Road')) return;
+    // ... Drawing Handlers ...
+    function handleFreehandDown(e) { if (!appState.isDrawing) { appState.isDrawing = true; var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY)); appState.drawPath = [pt]; appState.canSnapClose = false; } }
+    function handleFreehandMove(e) { if (appState.isDrawing) { var currentPt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY)); appState.drawPath.push(currentPt); redrawTempPolyline(); checkSnapProximity(currentPt); } }
+    function handleFreehandUp(e) { if (appState.isDrawing) { appState.isDrawing = false; finishDraw(); } }
+    function handlePolylineDown(e) { var pt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY)); appState.drawPath.push(pt); redrawTempPolyline(); appState.isDrawing = true; }
+    function handlePolylineMove(e) { if (appState.isDrawing && appState.drawPath.length > 0) { var lastPt = appState.drawPath[appState.drawPath.length - 1]; var mousePt = map.pixelToPoint(new BMapGL.Pixel(e.clientX, e.clientY)); if (appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine); appState.tempMouseLine = new BMapGL.Polyline([lastPt, mousePt], { strokeColor: appState.currentStyle.color, strokeWeight: 2, strokeStyle: 'dashed' }); map.addOverlay(appState.tempMouseLine); } }
+    function finishPolyline() { if (appState.drawPath.length < 2) return; if (appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine); finishDraw(); }
+    function redrawTempPolyline() { if(appState.tempPolyline) map.removeOverlay(appState.tempPolyline); appState.tempPolyline = new BMapGL.Polyline(appState.drawPath, { strokeColor: appState.currentStyle.color, strokeWeight: 2 }); map.addOverlay(appState.tempPolyline); }
+    
+    function checkSnapProximity(currentPt) 
+    { 
+        if(appState.drawMethod.includes('Road')) return; 
+        if(appState.drawPath.length < 10) return; 
         
-        if (appState.drawPath.length < 10) return;
-        var startPt = appState.drawPath[0];
-        var pixStart = map.pointToPixel(new BMapGL.Point(startPt.lng, startPt.lat));
-        var pixCurrent = map.pointToPixel(new BMapGL.Point(currentPt.lng, currentPt.lat));
-        var dist = Math.sqrt(Math.pow(pixStart.x - pixCurrent.x, 2) + Math.pow(pixStart.y - pixCurrent.y, 2));
-        if (dist < 20)
-        {
-            appState.canSnapClose = true;
-            if (!appState.snapHintCircle)
-            {
-                appState.snapHintCircle = new BMapGL.Circle(new BMapGL.Point(startPt.lng, startPt.lat), 5, {strokeColor: "white", strokeWeight: 2, fillColor: "#FFD700", fillOpacity: 0.9});
-                map.addOverlay(appState.snapHintCircle);
-            }
-        }
-        else
-        {
-            appState.canSnapClose = false;
-            if (appState.snapHintCircle)
-            {
-                map.removeOverlay(appState.snapHintCircle);
-                appState.snapHintCircle = null;
-            }
-        }
-    }
-
-    function finishDraw()
-    {
-        if (appState.drawPath.length < 2)
-        {
-            clearTemp();
-            return;
-        }
+        var startPt = appState.drawPath[0]; 
+        var pixStart = map.pointToPixel(new BMapGL.Point(startPt.lng, startPt.lat)); 
+        var pixCurrent = map.pointToPixel(new BMapGL.Point(currentPt.lng, currentPt.lat)); 
+        var dist = Math.sqrt(Math.pow(pixStart.x - pixCurrent.x, 2) + Math.pow(pixStart.y - pixCurrent.y, 2)); 
         
-        if (appState.drawMethod.includes('Road'))
-        {
-            var widthMeters = parseFloat(document.getElementById('tool_width').value) || 10;
-            var widthKm = widthMeters / 1000.0;
+        if(dist < 20) 
+        { 
+            appState.canSnapClose = true; 
+            if(!appState.snapHintCircle) 
+            { 
+                appState.snapHintCircle = new BMapGL.Circle(new BMapGL.Point(startPt.lng, startPt.lat), 5, {strokeColor: "white", strokeWeight: 2, fillColor: "#FFD700", fillOpacity: 0.9}); 
+                map.addOverlay(appState.snapHintCircle); 
+            } 
+        } 
+        else 
+        { 
+            appState.canSnapClose = false; 
+            if(appState.snapHintCircle) 
+            { 
+                map.removeOverlay(appState.snapHintCircle); 
+                appState.snapHintCircle = null; 
+            } 
+        } 
+    }
+    
+    function finishDraw() 
+    { 
+        if(appState.drawPath.length < 2) 
+        { 
+            clearTemp(); 
+            return; 
+        } 
+        
+        if(appState.drawMethod.includes('Road')) 
+        { 
+            var widthMeters = parseFloat(document.getElementById('tool_width').value) || 10; 
+            var widthKm = widthMeters / 1000.0; 
             
-            var coords = appState.drawPath.map(p => [p.lng, p.lat]);
-            var line = turf.lineString(coords);
-            var buffered = turf.buffer(line, widthKm, {units: 'kilometers'});
+            var coords = appState.drawPath.map(p => [p.lng, p.lat]); 
+            var line = turf.lineString(coords); 
+            var buffered = turf.buffer(line, widthKm, {units: 'kilometers'}); 
             
-            document.getElementById('type_selector').value = 'Road';
-            onTypeChanged();
+            document.getElementById('type_selector').value = 'Road'; 
+            onTypeChanged(); 
+            prepareSingleSave(buffered); 
+        } 
+        else 
+        { 
+            if(appState.canSnapClose) 
+            {
+                appState.drawPath.push(appState.drawPath[0]); 
+            }
+            else 
+            {
+                appState.drawPath.push(appState.drawPath[0]); 
+            }
             
-            prepareSingleSave(buffered);
-        }
-        else
-        {
-            if (appState.canSnapClose)
+            var coords = appState.drawPath.map(p => [p.lng, p.lat]); 
+            var rawGeo = turf.polygon([coords]); 
+            var simpleGeo = turf.simplify(rawGeo, {tolerance: 0.00001, highQuality: false}); 
+            
+            if(appState.mode === 'edit') 
             {
-                appState.drawPath.push(appState.drawPath[0]);
+                prepareSingleSave(simpleGeo); 
             }
-            else
+            else if(appState.mode === 'reconstruct') 
             {
-                appState.drawPath.push(appState.drawPath[0]);
+                executeAnalysis(simpleGeo); 
             }
-            var coords = appState.drawPath.map(p => [p.lng, p.lat]);
-            var rawGeo = turf.polygon([coords]);
-            var simpleGeo = turf.simplify(rawGeo, {tolerance: 0.00001, highQuality: false});
-            if (appState.mode === 'edit')
-            {
-                prepareSingleSave(simpleGeo);
-            }
-            else if (appState.mode === 'reconstruct')
-            {
-                executeAnalysis(simpleGeo);
-            }
-        }
-        clearTemp();
-        hideHint();
+        } 
+        clearTemp(); 
+        hideHint(); 
+    }
+    
+    function snapPolygon(inputGeo) 
+    { 
+        var existingPoints = []; 
+        appState.polygons.forEach(p => 
+        { 
+            if (p.geoJson && p.geoJson.geometry) 
+            { 
+                var coords = turf.coordAll(p.geoJson); 
+                existingPoints = existingPoints.concat(coords); 
+            } 
+        }); 
+        
+        if (existingPoints.length === 0) return inputGeo; 
+        
+        var targetPointsFC = turf.featureCollection(existingPoints.map(c => turf.point(c))); 
+        var SNAP_THRESHOLD = 0.05; 
+        var oldCoords = inputGeo.geometry.coordinates; 
+        
+        var newCoords = oldCoords.map(ring => 
+        { 
+            var ringPoints = []; 
+            ring.forEach((ptCoords, idx) => 
+            { 
+                var fromPt = turf.point(ptCoords); 
+                var nearest = turf.nearestPoint(fromPt, targetPointsFC); 
+                var dist = turf.distance(fromPt, nearest); 
+                var finalCoords = ptCoords; 
+                
+                if (dist < SNAP_THRESHOLD) 
+                { 
+                    console.log("⚡ Snapped!"); 
+                    finalCoords = nearest.geometry.coordinates; 
+                } 
+                
+                if (ringPoints.length > 0) 
+                { 
+                    var lastPt = ringPoints[ringPoints.length - 1]; 
+                    if (lastPt[0] === finalCoords[0] && lastPt[1] === finalCoords[1]) return; 
+                } 
+                ringPoints.push(finalCoords); 
+            }); 
+            
+            if (ringPoints.length > 2) 
+            { 
+                var first = ringPoints[0]; 
+                var last = ringPoints[ringPoints.length - 1]; 
+                if (first[0] !== last[0] || first[1] !== last[1]) 
+                {
+                    ringPoints.push(first); 
+                }
+            } 
+            return ringPoints; 
+        }); 
+        
+        var snappedPoly = turf.polygon(newCoords, inputGeo.properties); 
+        return turf.cleanCoords(snappedPoly); 
     }
 
-    function snapPolygon(inputGeo)
-    {
-        var existingPoints = [];
-        appState.polygons.forEach(p =>
-        {
-            if (p.geoJson && p.geoJson.geometry)
-            {
-                var coords = turf.coordAll(p.geoJson);
-                existingPoints = existingPoints.concat(coords);
-            }
-        });
-        if (existingPoints.length === 0) return inputGeo;
-        var targetPointsFC = turf.featureCollection(existingPoints.map(c => turf.point(c)));
-        var SNAP_THRESHOLD = 0.05;
-        var oldCoords = inputGeo.geometry.coordinates;
-        var newCoords = oldCoords.map(ring =>
-        {
-            var ringPoints = [];
-            ring.forEach((ptCoords, idx) =>
-            {
-                var fromPt = turf.point(ptCoords);
-                var nearest = turf.nearestPoint(fromPt, targetPointsFC);
-                var dist = turf.distance(fromPt, nearest);
-                var finalCoords = ptCoords;
-                if (dist < SNAP_THRESHOLD)
-                {
-                    console.log("⚡ Snapped!");
-                    finalCoords = nearest.geometry.coordinates;
-                }
-                if (ringPoints.length > 0)
-                {
-                    var lastPt = ringPoints[ringPoints.length - 1];
-                    if (lastPt[0] === finalCoords[0] && lastPt[1] === finalCoords[1]) return;
-                }
-                ringPoints.push(finalCoords);
-            });
-            if (ringPoints.length > 2)
-            {
-                var first = ringPoints[0];
-                var last = ringPoints[ringPoints.length - 1];
-                if (first[0] !== last[0] || first[1] !== last[1])
-                {
-                    ringPoints.push(first);
-                }
-            }
-            return ringPoints;
-        });
-        var snappedPoly = turf.polygon(newCoords, inputGeo.properties);
-        return turf.cleanCoords(snappedPoly);
-    }
-
+    // 【修改】核心修复：增加 Buffer(0) 容错，防止拓扑错误导致分析失败
     function executeAnalysis(polyX)
     {
         clearAnalysis();
         appState.tempResultData = [];
-        if (appState.polygons.length === 0)
-        {
-            prepareSingleSave(polyX);
-            return;
+        
+        if (appState.polygons.length === 0) 
+        { 
+            prepareSingleSave(polyX); 
+            return; 
         }
+        
         try
         {
-            var featX = turf.feature(polyX.geometry);
-            var existFeats = appState.polygons.map(p => turf.feature(p.geoJson.geometry));
+            // 修复微小自相交
+            var featX = turf.buffer(turf.feature(polyX.geometry), 0);
+            var existFeats = appState.polygons.map(p => turf.buffer(turf.feature(p.geoJson.geometry), 0));
             var unionC = null;
+            
             for (let i = 0; i < existFeats.length; i++)
             {
                 for (let j = i + 1; j < existFeats.length; j++)
                 {
                     var inter = turf.intersect(existFeats[i], existFeats[j]);
-                    if (inter) unionC = unionC ? turf.union(unionC, inter) : inter;
+                    if (inter) 
+                    {
+                        unionC = unionC ? turf.union(unionC, inter) : inter;
+                    }
                 }
             }
+            
             var interXC = unionC ? turf.intersect(featX, unionC) : null;
-            if (interXC) cacheResult(interXC, "#FFC0CB", 0.6, "重叠核心", false, 'pink');
+            if (interXC) 
+            {
+                cacheResult(interXC, "#FFC0CB", 0.6, "重叠核心", false, 'pink');
+            }
+            
             var unionAll = existFeats[0];
-            for (let i = 1; i < existFeats.length; i++) unionAll = turf.union(unionAll, existFeats[i]);
+            for (let i = 1; i < existFeats.length; i++) 
+            {
+                unionAll = turf.union(unionAll, existFeats[i]);
+            }
+            
             var interTotal = turf.intersect(featX, unionAll);
             var interPurple = (interTotal && interXC) ? turf.difference(interTotal, interXC) : interTotal;
-            if (interPurple) cacheResult(interPurple, "#800080", 0.4, "单侧覆盖", false, 'purple');
+            if (interPurple) 
+            {
+                cacheResult(interPurple, "#800080", 0.4, "单侧覆盖", false, 'purple');
+            }
+            
             var resE = turf.difference(featX, unionAll);
-            if (resE) cacheResult(resE, "yellow", 0.3, "新拓展区", false, 'yellow');
+            if (resE) 
+            {
+                cacheResult(resE, "yellow", 0.3, "新拓展区", false, 'yellow');
+            }
+            
             showModal(true);
         }
         catch (e)
         {
             console.log("UE_ERROR:" + e.message);
-            alert("分析错误");
+            alert("分析错误 (请尝试简化形状)");
         }
     }
 
-    function cacheResult(geo, col, op, name, line, type)
-    {
-        var geoms = flattenGeo(geo);
-        geoms.forEach(path =>
-        {
-            var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4}) : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1});
-            map.addOverlay(ov);
-            appState.analysisOverlays.push(ov);
-        });
-        if (!type) type = "Reconstruct";
-        appState.tempResultData.push({geoJson:geo, color:col, opacity:op, rawType:type, isLine:line});
+    function cacheResult(geo, col, op, name, line, type) 
+    { 
+        var geoms = flattenGeo(geo); 
+        geoms.forEach(path => 
+        { 
+            var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4}) : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1}); 
+            map.addOverlay(ov); 
+            appState.analysisOverlays.push(ov); 
+        }); 
+        
+        if(!type) type = "Reconstruct"; 
+        appState.tempResultData.push({geoJson:geo, color:col, opacity:op, rawType:type, isLine:line}); 
     }
-
-    function prepareSingleSave(geoJson)
-    {
-        appState.tempResultData = [];
-        cacheResult(geoJson, appState.currentStyle.color, appState.currentStyle.opacity, 'Temp', false, 'single');
-        showModal(false);
+    
+    function prepareSingleSave(geoJson) 
+    { 
+        appState.tempResultData = []; 
+        cacheResult(geoJson, appState.currentStyle.color, appState.currentStyle.opacity, 'Temp', false, 'single'); 
+        showModal(false); 
     }
-
-    function showModal(isMulti)
-    {
-        var modal = document.getElementById('save_modal');
-        var colorBox = document.getElementById('color_filter_box');
-        var colorSel = document.getElementById('color_selector');
-        document.getElementById('poly_tag_input').value = "";
-        document.getElementById('poly_height_input').value = "";
-        if (isMulti)
-        {
-            colorBox.style.display = 'block';
-        }
-        else
-        {
-            colorBox.style.display = 'none';
-        }
-        document.getElementById('poly_name_input').value = "我的区域" + DEFAULT_NAME_IDX;
-        onTypeChanged();
-        modal.style.display = 'block';
+    
+    function showModal(isMulti) 
+    { 
+        var modal = document.getElementById('save_modal'); 
+        var colorBox = document.getElementById('color_filter_box'); 
+        var colorSel = document.getElementById('color_selector'); 
+        document.getElementById('poly_tag_input').value = ""; 
+        document.getElementById('poly_height_input').value = ""; 
+        
+        if(isMulti) 
+        { 
+            colorBox.style.display = 'block'; 
+        } 
+        else 
+        { 
+            colorBox.style.display = 'none'; 
+        } 
+        document.getElementById('poly_name_input').value = "我的区域" + DEFAULT_NAME_IDX; 
+        onTypeChanged(); 
+        modal.style.display = 'block'; 
     }
-
-    function closeModal()
-    {
-        document.getElementById('save_modal').style.display = 'none';
-        clearAnalysis();
+    
+    function closeModal() 
+    { 
+        document.getElementById('save_modal').style.display = 'none'; 
+        clearAnalysis(); 
     }
-
-    window.onTypeChanged = function()
-    {
-        var type = document.getElementById('type_selector').value;
-        var parentContainer = document.getElementById('parent_container');
-        var parentSelector = document.getElementById('parent_selector');
-        parentSelector.innerHTML = '<option value="">请选择...</option>';
-        var targetParentType = "";
-        if (type === 'District')
-        {
-            parentContainer.style.display = 'none';
-            return;
-        }
-        else if (type === 'Street')
-        {
-            targetParentType = 'District';
-        }
-        else if (type === 'Community')
-        {
-            targetParentType = 'Street';
-        }
-        else if (type === 'Custom' || type === 'Road')
-        {
-            targetParentType = 'Street';
-        }
-        else
-        {
-            parentContainer.style.display = 'none';
-            return;
-        }
-        parentContainer.style.display = 'block';
-        var parents = appState.polygons.filter(p => p.geoJson.properties.customType === targetParentType);
-        if (parents.length === 0)
-        {
-            var opt = document.createElement('option');
-            opt.text = "⚠️ 暂无上级数据";
-            opt.disabled = true;
-            opt.selected = true;
-            parentSelector.add(opt);
-        }
-        else
-        {
-            parents.forEach(p =>
-            {
-                var opt = document.createElement('option');
-                opt.value = p.geoJson.properties.id;
-                opt.text = p.geoJson.properties.name;
-                parentSelector.add(opt);
-            });
-        }
+    
+    window.onTypeChanged = function() 
+    { 
+        var type = document.getElementById('type_selector').value; 
+        var parentContainer = document.getElementById('parent_container'); 
+        var parentSelector = document.getElementById('parent_selector'); 
+        parentSelector.innerHTML = '<option value="">请选择...</option>'; 
+        var targetParentType = ""; 
+        
+        if (type === 'District') 
+        { 
+            parentContainer.style.display = 'none'; 
+            return; 
+        } 
+        else if (type === 'Street') 
+        { 
+            targetParentType = 'District'; 
+        } 
+        else if (type === 'Community') 
+        { 
+            targetParentType = 'Street'; 
+        } 
+        else if (type === 'Custom' || type === 'Road') 
+        { 
+            targetParentType = 'Street'; 
+        } 
+        else 
+        { 
+            parentContainer.style.display = 'none'; 
+            return; 
+        } 
+        
+        parentContainer.style.display = 'block'; 
+        var parents = appState.polygons.filter(p => p.geoJson.properties.customType === targetParentType); 
+        
+        if (parents.length === 0) 
+        { 
+            var opt = document.createElement('option'); 
+            opt.text = "⚠️ 暂无上级数据"; 
+            opt.disabled = true; 
+            opt.selected = true; 
+            parentSelector.add(opt); 
+        } 
+        else 
+        { 
+            parents.forEach(p => 
+            { 
+                var opt = document.createElement('option'); 
+                opt.value = p.geoJson.properties.id; 
+                opt.text = p.geoJson.properties.name; 
+                parentSelector.add(opt); 
+            }); 
+        } 
     };
-
-    window.confirmSave = function()
-    {
-        if (appState.isSaving) return;
-        var nameInput = document.getElementById('poly_name_input').value || "未命名";
-        var selectedType = document.getElementById('type_selector').value;
-        var parentId = "";
-        if (selectedType !== 'District' && selectedType !== 'Reconstruct' && selectedType !== 'Road')
-        {
-            var pSel = document.getElementById('parent_selector');
-            parentId = pSel.value;
-            if (!parentId)
-            {
-                alert("请选择隶属的父级区域！");
-                return;
-            }
-        }
-        if (nameInput === "我的区域" + DEFAULT_NAME_IDX)
-        {
-            DEFAULT_NAME_IDX++;
-        }
-        var toSave = appState.tempResultData;
-        var tagInput = document.getElementById('poly_tag_input').value.trim();
-        var heightInput = parseFloat(document.getElementById('poly_height_input').value) || 0;
-        var isSnapEnabled = document.getElementById('snap_toggle').checked;
-        if (isSnapEnabled)
-        {
-            toSave.forEach((item) =>
-            {
-                try
-                {
-                    if (item.geoJson.geometry.type === 'Polygon')
-                    {
-                        item.geoJson = snapPolygon(item.geoJson);
-                    }
-                }
-                catch (e) {}
-            });
-        }
-        document.getElementById('save_modal').style.display = 'none';
-        appState.isSaving = true;
-        processSaveQueue(toSave, nameInput, selectedType, parentId, tagInput, heightInput, 0);
+    
+    window.confirmSave = function() 
+    { 
+        if(appState.isSaving) return; 
+        var nameInput = document.getElementById('poly_name_input').value || "未命名"; 
+        var selectedType = document.getElementById('type_selector').value; 
+        var parentId = ""; 
+        
+        if (selectedType !== 'District' && selectedType !== 'Reconstruct' && selectedType !== 'Road') 
+        { 
+            var pSel = document.getElementById('parent_selector'); 
+            parentId = pSel.value; 
+            if (!parentId) 
+            { 
+                alert("请选择隶属的父级区域！"); 
+                return; 
+            } 
+        } 
+        
+        if(nameInput === "我的区域" + DEFAULT_NAME_IDX) 
+        { 
+            DEFAULT_NAME_IDX++; 
+        } 
+        
+        var toSave = appState.tempResultData; 
+        var tagInput = document.getElementById('poly_tag_input').value.trim(); 
+        var heightInput = parseFloat(document.getElementById('poly_height_input').value) || 0; 
+        var isSnapEnabled = document.getElementById('snap_toggle').checked; 
+        
+        if (isSnapEnabled) 
+        { 
+            toSave.forEach((item) => 
+            { 
+                try 
+                { 
+                    if (item.geoJson.geometry.type === 'Polygon') 
+                    { 
+                        item.geoJson = snapPolygon(item.geoJson); 
+                    } 
+                } 
+                catch(e) {} 
+            }); 
+        } 
+        
+        document.getElementById('save_modal').style.display = 'none'; 
+        appState.isSaving = true; 
+        processSaveQueue(toSave, nameInput, selectedType, parentId, tagInput, heightInput, 0); 
     };
-
-    function processSaveQueue(list, baseName, typeStr, pid, tag, height, index)
-    {
-        if (index >= list.length)
-        {
-            appState.tempResultData = [];
-            appState.isSaving = false;
-            return;
-        }
-        var item = list[index];
-        var finalName = (list.length > 1) ? (baseName + "_" + item.rawType + "_" + (index + 1)) : baseName;
-        var txtColorToSave = appState.currentStyle.textColor || '#ffffff';
-        addPermanent(item.geoJson, item.color, item.opacity, item.isLine, finalName, typeStr, pid, txtColorToSave, tag, height);
-        setTimeout(function()
-        {
-            processSaveQueue(list, baseName, typeStr, pid, tag, height, index + 1);
-        }, 300);
+    
+    function processSaveQueue(list, baseName, typeStr, pid, tag, height, index) 
+    { 
+        if(index >= list.length) 
+        { 
+            appState.tempResultData = []; 
+            appState.isSaving = false; 
+            return; 
+        } 
+        
+        var item = list[index]; 
+        var finalName = (list.length > 1) ? (baseName + "_" + item.rawType + "_" + (index+1)) : baseName; 
+        var txtColorToSave = appState.currentStyle.textColor || '#ffffff'; 
+        
+        addPermanent(item.geoJson, item.color, item.opacity, item.isLine, finalName, typeStr, pid, txtColorToSave, tag, height); 
+        
+        setTimeout(function() 
+        { 
+            processSaveQueue(list, baseName, typeStr, pid, tag, height, index + 1); 
+        }, 300); 
     }
 
     function addPermanent(geo, col, op, line, name, typeStr, parentId, txtCol, tag, height)
     {
         var id = 'poly_' + (ID_COUNTER++);
-        if (!parentId) parentId = "None";
-        if (!txtCol) txtCol = "yellow";
-        if (!tag) tag = "";
+        if (!parentId) parentId = "None"; 
+        if (!txtCol) txtCol = "yellow"; 
+        if (!tag) tag = ""; 
         if (!height) height = 0;
+        
         geo.properties = { id: id, name: name, svCol: col, svOp: op, svLine: line, customType: typeStr, pid: parentId, svTxtCol: txtCol, customTag: tag, customHeight: height };
-        var polygonOverlays = [];
+        
+        var polygonOverlays = []; 
         var geoms = flattenGeo(geo);
-        geoms.forEach(path =>
-        {
+        
+        geoms.forEach(path => 
+        { 
             var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4, strokeOpacity:op}) : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1});
             
-            // 【双击聚焦】
-            ov.addEventListener('dblclick', function()
-            {
-                window.focusPoly(id);
-                // 通知 C++
-                console.log("UE_DBLCLICK:" + id);
+            // 【交互核心】移除 Click，仅保留 DblClick 和 Hover
+            ov.addEventListener('dblclick', function() 
+            { 
+                window.focusPoly(id); 
+                console.log("UE_DBLCLICK:" + id); 
+            });
+            
+            // 悬浮高亮
+            ov.addEventListener('mouseover', function() 
+            { 
+                highlightPoly(id, path); 
+            });
+            
+            // 移出恢复
+            ov.addEventListener('mouseout', function() 
+            { 
+                unhighlightPoly(); 
             });
 
-            // 【悬浮高亮】
-            ov.addEventListener('mouseover', function()
-            {
-                highlightPoly(id, path);
-            });
-            ov.addEventListener('mouseout', function()
-            {
-                unhighlightPoly();
-            });
-
-            ov.customData = { id: id, type: typeStr, tag: tag };
-            map.addOverlay(ov);
-            polygonOverlays.push(ov);
+            ov.customData = { id: id, type: typeStr, tag: tag }; 
+            map.addOverlay(ov); 
+            polygonOverlays.push(ov); 
         });
-        var label = null;
-        try
-        {
-            var center = turf.centerOfMass(geo).geometry.coordinates;
-            var labelPt = new BMapGL.Point(center[0], center[1]);
-            label = new BMapGL.Label(name, { position: labelPt, offset: new BMapGL.Size(-20, -10) });
-            label.setStyle({ color: txtCol, backgroundColor: "transparent", border: "none", fontSize: "14px", fontWeight: "bold", textShadow: "1px 1px 2px black" });
-            map.addOverlay(label);
-        }
-        catch (e) {}
+        
+        var label = null; 
+        try 
+        { 
+            var center = turf.centerOfMass(geo).geometry.coordinates; 
+            var labelPt = new BMapGL.Point(center[0], center[1]); 
+            label = new BMapGL.Label(name, { position: labelPt, offset: new BMapGL.Size(-20, -10) }); 
+            label.setStyle({ color: txtCol, backgroundColor: "transparent", border: "none", fontSize: "14px", fontWeight: "bold", textShadow: "1px 1px 2px black" }); 
+            map.addOverlay(label); 
+        } 
+        catch(e) { }
+        
         appState.polygons.push({ overlay: polygonOverlays, label: label, geoJson: geo });
-        updateFilterUI();
-        var randomTag = new Date().getTime();
+        
+        updateFilterUI(); 
+        var randomTag = new Date().getTime(); 
         console.log("UE_ADD:" + id + "|" + name + "|" + typeStr + "|" + parentId + "|" + col + "|" + op + "|" + txtCol + "|" + tag + "|" + height + "|" + randomTag);
     }
 
+    // 【修改】防抖动高亮：enableClicking: false 避免事件抢夺
     function highlightPoly(id, path)
     {
         if (appState.mode !== 'browse') return;
         unhighlightPoly();
+        
         tempHighlighter = new BMapGL.Polyline(path, {
             strokeColor: '#00FFFF', 
             strokeWeight: 6,        
             strokeOpacity: 0.8,
-            strokeStyle: 'solid'
+            strokeStyle: 'solid',
+            enableClicking: false 
         });
         map.addOverlay(tempHighlighter);
-        var step = 0;
-        var direction = 1;
-        function animateGlow()
-        {
-            if (!tempHighlighter) return;
-            step += 0.05 * direction;
-            if (step >= 1) direction = -1;
-            if (step <= 0) direction = 1;
-            var alpha = 0.5 + (step * 0.5); 
-            var weight = 6 + (step * 2);
-            tempHighlighter.setStrokeOpacity(alpha);
-            tempHighlighter.setStrokeWeight(weight);
-            highlightAnimReq = requestAnimationFrame(animateGlow);
-        }
-        animateGlow();
     }
 
     function unhighlightPoly()
     {
-        if (highlightAnimReq)
-        {
-            cancelAnimationFrame(highlightAnimReq);
-            highlightAnimReq = null;
-        }
         if (tempHighlighter)
         {
             map.removeOverlay(tempHighlighter);
@@ -1296,213 +1352,274 @@
         }
     }
 
-    function openSearchModal()
-    {
-        document.getElementById('search_modal').style.display = 'block';
-        var input = document.getElementById('search_input');
-        input.value = "";
-        input.focus();
+    function openSearchModal() 
+    { 
+        document.getElementById('search_modal').style.display = 'block'; 
+        var input = document.getElementById('search_input'); 
+        input.value = ""; 
+        input.focus(); 
     }
-
-    function closeSearchModal()
-    {
-        document.getElementById('search_modal').style.display = 'none';
+    
+    function closeSearchModal() 
+    { 
+        document.getElementById('search_modal').style.display = 'none'; 
     }
-
-    function confirmSearch()
-    {
-        var val = document.getElementById('search_input').value.trim();
-        if (val)
+    
+    function confirmSearch() 
+    { 
+        var val = document.getElementById('search_input').value.trim(); 
+        if (val) 
+        { 
+            var found = window.searchPoly(val); 
+            if (found) 
+            { 
+                closeSearchModal(); 
+            } 
+            else 
+            { 
+                alert("未找到名为 '" + val + "' 的区域"); 
+            } 
+        } 
+    }
+    
+    window.searchPoly = function(name) 
+    { 
+        var target = appState.polygons.find(p => p.geoJson.properties.name.includes(name)); 
+        if (target) 
+        { 
+            focusPoly(target.geoJson.properties.id); 
+            return true; 
+        } 
+        return false; 
+    };
+    
+    function showHint(text) 
+    { 
+        var bar = document.getElementById('hint_bar'); 
+        if(bar) 
+        { 
+            bar.innerText = text; 
+            bar.style.display = 'block'; 
+        } 
+    }
+    
+    function hideHint() 
+    { 
+        var bar = document.getElementById('hint_bar'); 
+        if(bar) 
         {
-            var found = window.searchPoly(val);
-            if (found)
-            {
-                closeSearchModal();
-            }
-            else
-            {
-                alert("未找到名为 '" + val + "' 的区域");
-            }
+            bar.style.display = 'none'; 
         }
     }
-
-    window.searchPoly = function(name)
-    {
-        var target = appState.polygons.find(p => p.geoJson.properties.name.includes(name));
-        if (target)
-        {
-            focusPoly(target.geoJson.properties.id);
-            return true;
-        }
-        return false;
+    
+    window.updatePolyAttributes = function(id, newName, newColor, newOpacity, newTxtCol, newParentId) 
+    { 
+        var target = appState.polygons.find(p => p.geoJson.properties.id === id); 
+        if (!target) return; 
+        
+        target.geoJson.properties.name = newName; 
+        target.geoJson.properties.svCol = newColor; 
+        target.geoJson.properties.svOp = newOpacity; 
+        target.geoJson.properties.svTxtCol = newTxtCol; 
+        target.geoJson.properties.pid = newParentId; 
+        
+        var ovs = Array.isArray(target.overlay) ? target.overlay : [target.overlay]; 
+        ovs.forEach(o => 
+        { 
+            if (o instanceof BMapGL.Polygon) 
+            { 
+                o.setFillColor(newColor); 
+                o.setStrokeColor(newColor); 
+                o.setFillOpacity(parseFloat(newOpacity)); 
+            } 
+            else if (o instanceof BMapGL.Polyline) 
+            { 
+                o.setStrokeColor(newColor); 
+                o.setStrokeOpacity(parseFloat(newOpacity)); 
+            } 
+        }); 
+        
+        if (target.label) 
+        { 
+            target.label.setContent(newName); 
+            target.label.setStyle({ color: newTxtCol }); 
+        } 
     };
-
-    function showHint(text)
-    {
-        var bar = document.getElementById('hint_bar');
-        if (bar)
-        {
-            bar.innerText = text;
-            bar.style.display = 'block';
-        }
+    
+    window.deletePoly = function(id) 
+    { 
+        var targets = appState.polygons.filter(p => p.geoJson.properties.id === id); 
+        if(targets.length > 0) 
+        { 
+            targets.forEach(t => 
+            { 
+                var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay]; 
+                ovs.forEach(o => map.removeOverlay(o)); 
+                if(t.label) map.removeOverlay(t.label); 
+            }); 
+            appState.polygons = appState.polygons.filter(p => p.geoJson.properties.id !== id); 
+            console.log("UE_LOG: Deleted poly " + id); 
+            updateFilterUI(); 
+        } 
+    };
+    
+    window.clearTemp = function() 
+    { 
+        appState.drawPath=[]; 
+        if(appState.tempPolyline) map.removeOverlay(appState.tempPolyline); 
+        if(appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine); 
+        if(appState.snapHintCircle) 
+        { 
+            map.removeOverlay(appState.snapHintCircle); 
+            appState.snapHintCircle = null; 
+        } 
+        appState.canSnapClose = false; 
+        appState.isDrawing = false; 
+    };
+    
+    window.requestAllDataForSave = function() 
+    { 
+        var data = appState.polygons.map(p => p.geoJson); 
+        var jsonStr = JSON.stringify(data); 
+        console.log("UE_EXPORT_DATA:" + jsonStr); 
+    };
+    
+    window.exportMap = function(fname) 
+    { 
+        var data = appState.polygons.map(p => p.geoJson); 
+        console.log("UE_SAVE:" + fname + "|" + JSON.stringify(data)); 
+    };
+    
+    window.importMap = function(json) 
+    { 
+        map.clearOverlays(); 
+        appState.polygons=[]; 
+        var list = (typeof json === 'string') ? JSON.parse(json) : json; 
+        list.forEach((g, i) => 
+        { 
+            var p = g.properties; 
+            var h = p.customHeight || 0; 
+            setTimeout(() => 
+            { 
+                addPermanent(g, p.svCol, p.svOp, p.svLine, p.name, p.customType, p.pid, p.svTxtCol, p.customTag, h); 
+            }, i * 50); 
+        }); 
+    };
+    
+    window.fetchBoundary = function() 
+    { 
+        var name = document.getElementById('boundary_input').value.trim(); 
+        if (!name) 
+        { 
+            alert("请输入行政区名称！"); 
+            return; 
+        } 
+        showHint("正在从百度地图获取 '" + name + "' 的轮廓..."); 
+        var bdary = new BMapGL.Boundary(); 
+        bdary.get(name, function(rs) 
+        { 
+            if (rs.boundaries.length === 0) 
+            { 
+                alert("未找到名为 '" + name + "' 的行政区划。"); 
+                hideHint(); 
+                return; 
+            } 
+            var strCoords = rs.boundaries[0]; 
+            var pts = strCoords.split(';').map(function(s) 
+            { 
+                var arr = s.split(','); 
+                return [parseFloat(arr[0]), parseFloat(arr[1])]; 
+            }); 
+            if (pts.length > 0) 
+            { 
+                var first = pts[0]; 
+                var last = pts[pts.length - 1]; 
+                if (first[0] !== last[0] || first[1] !== last[1]) 
+                { 
+                    pts.push(first); 
+                } 
+            } 
+            var poly = turf.polygon([pts]); 
+            var simplePoly = turf.simplify(poly, {tolerance: 0.00001, highQuality: false}); 
+            document.getElementById('poly_name_input').value = name; 
+            var typeSel = document.getElementById('type_selector'); 
+            if (name.includes("区") || name.includes("县")) 
+            { 
+                typeSel.value = 'District'; 
+            } 
+            else if (name.includes("街道") || name.includes("镇")) 
+            { 
+                typeSel.value = 'Street'; 
+            } 
+            else 
+            { 
+                typeSel.value = 'Custom'; 
+            } 
+            onTypeChanged(); 
+            prepareSingleSave(simplePoly); 
+            showHint("已生成轮廓，请点击保存"); 
+            var center = turf.centerOfMass(simplePoly).geometry.coordinates; 
+            map.setCenter(new BMapGL.Point(center[0], center[1])); 
+            map.setZoom(14); 
+        }); 
+    };
+    
+    function flattenGeo(geo) 
+    { 
+        var coords = []; 
+        if(!geo || !geo.geometry) return []; 
+        var type = geo.geometry.type; 
+        if(type === 'MultiPolygon') coords = geo.geometry.coordinates.map(c=>c[0]); 
+        else if(type === 'Polygon') coords = [geo.geometry.coordinates[0]]; 
+        else if(type === 'LineString') coords = [geo.geometry.coordinates]; 
+        else if(type === 'MultiLineString') coords = geo.geometry.coordinates; 
+        var res = []; 
+        coords.forEach(c => 
+        { 
+            if(c) res.push(c.map(p => new BMapGL.Point(p[0], p[1]))); 
+        }); 
+        return res; 
     }
-
-    function hideHint()
-    {
-        var bar = document.getElementById('hint_bar');
-        if (bar)
-        {
-            bar.style.display = 'none';
-        }
+    
+    function clearAnalysis() 
+    { 
+        appState.analysisOverlays.forEach(o=>map.removeOverlay(o)); 
+        appState.analysisOverlays=[]; 
+        appState.tempResultData=[]; 
     }
-
-    window.updatePolyAttributes = function(id, newName, newColor, newOpacity, newTxtCol, newParentId)
-    {
-        var target = appState.polygons.find(p => p.geoJson.properties.id === id);
-        if (!target) return;
-        target.geoJson.properties.name = newName;
-        target.geoJson.properties.svCol = newColor;
-        target.geoJson.properties.svOp = newOpacity;
-        target.geoJson.properties.svTxtCol = newTxtCol;
-        target.geoJson.properties.pid = newParentId;
-        var ovs = Array.isArray(target.overlay) ? target.overlay : [target.overlay];
-        ovs.forEach(o =>
-        {
-            if (o instanceof BMapGL.Polygon)
-            {
-                o.setFillColor(newColor);
-                o.setStrokeColor(newColor);
-                o.setFillOpacity(parseFloat(newOpacity));
-            }
-            else if (o instanceof BMapGL.Polyline)
-            {
-                o.setStrokeColor(newColor);
-                o.setStrokeOpacity(parseFloat(newOpacity));
-            }
-        });
-        if (target.label)
-        {
-            target.label.setContent(newName);
-            target.label.setStyle({ color: newTxtCol });
-        }
-    };
-
-    window.deletePoly = function(id)
-    {
-        var targets = appState.polygons.filter(p => p.geoJson.properties.id === id);
-        if (targets.length > 0)
-        {
-            targets.forEach(t =>
-            {
-                var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay];
-                ovs.forEach(o => map.removeOverlay(o));
-                if (t.label) map.removeOverlay(t.label);
-            });
-            appState.polygons = appState.polygons.filter(p => p.geoJson.properties.id !== id);
-            console.log("UE_LOG: Deleted poly " + id);
-            updateFilterUI();
-        }
-    };
-
-    window.clearTemp = function()
-    {
-        appState.drawPath = [];
-        if (appState.tempPolyline) map.removeOverlay(appState.tempPolyline);
-        if (appState.tempMouseLine) map.removeOverlay(appState.tempMouseLine);
-        if (appState.snapHintCircle)
-        {
-            map.removeOverlay(appState.snapHintCircle);
-            appState.snapHintCircle = null;
-        }
-        appState.canSnapClose = false;
-        appState.isDrawing = false;
-    };
-
-    window.requestAllDataForSave = function()
-    {
-        var data = appState.polygons.map(p => p.geoJson);
-        var jsonStr = JSON.stringify(data);
-        console.log("UE_EXPORT_DATA:" + jsonStr);
-    };
-
-    window.exportMap = function(fname)
-    {
-        var data = appState.polygons.map(p => p.geoJson);
-        console.log("UE_SAVE:" + fname + "|" + JSON.stringify(data));
-    };
-
-    window.importMap = function(json)
-    {
-        map.clearOverlays();
-        appState.polygons = [];
-        var list = (typeof json === 'string') ? JSON.parse(json) : json;
-        list.forEach((g, i) =>
-        {
-            var p = g.properties;
-            var h = p.customHeight || 0;
-            setTimeout(() =>
-            {
-                addPermanent(g, p.svCol, p.svOp, p.svLine, p.name, p.customType, p.pid, p.svTxtCol, p.customTag, h);
-            }, i * 50);
-        });
-    };
-
-    function flattenGeo(geo)
-    {
-        var coords = [];
-        if (!geo || !geo.geometry) return [];
-        var type = geo.geometry.type;
-        if (type === 'MultiPolygon') coords = geo.geometry.coordinates.map(c => c[0]);
-        else if (type === 'Polygon') coords = [geo.geometry.coordinates[0]];
-        else if (type === 'LineString') coords = [geo.geometry.coordinates];
-        else if (type === 'MultiLineString') coords = geo.geometry.coordinates;
-        var res = [];
-        coords.forEach(c =>
-        {
-            if (c) res.push(c.map(p => new BMapGL.Point(p[0], p[1])));
-        });
-        return res;
-    }
-
-    function clearAnalysis()
-    {
-        appState.analysisOverlays.forEach(o => map.removeOverlay(o));
-        appState.analysisOverlays = [];
-        appState.tempResultData = [];
-    }
-
-    window.focusPoly = function(id)
-    {
-        var targets = appState.polygons.filter(p => p.geoJson.properties.id === id);
-        if (targets.length > 0)
-        {
-            var allPoints = [];
-            targets.forEach(t =>
-            {
-                var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay];
-                ovs.forEach(o =>
-                {
-                    var path = o.getPath();
-                    if (path) allPoints = allPoints.concat(path);
-                    var oldColor = o.getStrokeColor();
-                    o.setStrokeColor("red");
-                    o.setStrokeWeight(4);
-                    setTimeout(() =>
-                    {
-                        o.setStrokeColor(oldColor);
-                        o.setStrokeWeight(1);
-                    }, 1000);
-                });
-            });
-            if (allPoints.length > 0)
-            {
-                map.setViewport(allPoints, { margins: [60, 60, 60, 300], enableAnimation: true, zoomFactor: 0 });
-            }
-        }
-        else
-        {
-            console.log("UE_ERROR: Not found " + id);
-        }
+    
+    window.focusPoly = function(id) 
+    { 
+        var targets = appState.polygons.filter(p => p.geoJson.properties.id === id); 
+        if(targets.length > 0) 
+        { 
+            var allPoints = []; 
+            targets.forEach(t => 
+            { 
+                var ovs = Array.isArray(t.overlay) ? t.overlay : [t.overlay]; 
+                ovs.forEach(o => 
+                { 
+                    var path = o.getPath(); 
+                    if(path) allPoints = allPoints.concat(path); 
+                    var oldColor = o.getStrokeColor(); 
+                    o.setStrokeColor("red"); 
+                    o.setStrokeWeight(4); 
+                    setTimeout(() => 
+                    { 
+                        o.setStrokeColor(oldColor); 
+                        o.setStrokeWeight(1); 
+                    }, 1000); 
+                }); 
+            }); 
+            if(allPoints.length > 0) 
+            { 
+                map.setViewport(allPoints, { margins: [60, 60, 60, 300], enableAnimation: true, zoomFactor: 0 }); 
+            } 
+        } 
+        else 
+        { 
+            console.log("UE_ERROR: Not found " + id); 
+        } 
     };
     
     updateFilterUI();

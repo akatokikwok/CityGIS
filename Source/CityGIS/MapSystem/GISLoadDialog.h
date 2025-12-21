@@ -3,6 +3,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Components/ScrollBox.h"
 #include "Components/Button.h"
+#include "Components/TextBlock.h"
 #include "GISLoadDialog.generated.h"
 
 class UGISWebWidget;
@@ -23,7 +24,8 @@ protected:
 	UPROPERTY(meta = (BindWidget)) UButton* Btn_Load;
 	UPROPERTY(meta = (BindWidget)) UButton* Btn_Cancel;
 	UPROPERTY(meta = (BindWidget)) UButton* Btn_Delete; // 可选：删除存档功能
-
+	UPROPERTY(meta = (BindWidget)) UTextBlock* Txt_DescPreview;
+	
 	// 列表项类
 	UPROPERTY(EditAnywhere, Category = "Config")
 	TSubclassOf<UGISFileItem> FileItemClass;
