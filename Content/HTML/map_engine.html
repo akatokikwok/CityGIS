@@ -84,7 +84,7 @@
         #filter_panel
         {
             position: fixed;
-            top: 280px; /* 下移避开工具条 */
+            top: 280px;
             right: 20px;
             background: rgba(255, 255, 255, 0.95);
             padding: 15px;
@@ -376,7 +376,7 @@
     <div id="hint_bar">操作提示...</div>
 
     <div id="filter_panel">
-        <h4>🔍 区域筛选</h4>
+        <h4>🔍 区域筛选 (多选)</h4>
         <div class="filter-actions">
             <button class="filter-btn" onclick="selectAllFilters()">✅ 选择所有</button>
             <button class="filter-btn" onclick="clearAllFilters()">❌ 清除所有</button>
@@ -393,19 +393,10 @@
             <span>不透明度</span> <input type="range" id="tool_opacity" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateStyleState()">
             <span id="opacity_val" class="val-display">0.5</span>
         </div>
-        
         <div class="tool-row" id="row_width" style="display:none; border-top:1px dashed #eee; padding-top:10px;">
             <span>道路宽度(米)</span>
             <input type="range" id="tool_width" min="2" max="50" step="1" value="10" oninput="document.getElementById('width_val').innerText=this.value">
             <span id="width_val" class="val-display">10</span>
-        </div>
-
-        <div class="tool-row" style="border-top:1px dashed #eee; margin-top:10px; padding-top:10px; flex-direction:column; align-items:stretch;">
-            <span style="font-size:12px; margin-bottom:5px; color:#333;">📥 导入行政区 (自动描边)</span>
-            <div style="display:flex; gap:5px;">
-                <input type="text" id="boundary_input" placeholder="例: 黄浦区外滩街道" style="flex:1; padding:4px; font-size:12px;">
-                <button onclick="fetchBoundary()" style="padding:4px 8px; cursor:pointer; background:#007bff; color:white; border:none; border-radius:4px; font-size:12px;">生成</button>
-            </div>
         </div>
     </div>
     
@@ -460,8 +451,8 @@
         <input type="number" id="poly_height_input" placeholder="例如: 20 (高架桥)">
         
         <span class="input-label">自定义标签 (可选):</span>
-        <input type="text" id="poly_tag_input" placeholder="例如: 类目一, 重点区域...">
-
+        <input type="text" id="poly_tag_input" placeholder="例如: 商业区...">
+        
         <span class="input-label">区域名称:</span>
         <input type="text" id="poly_name_input" placeholder="请输入名称">
         
@@ -499,8 +490,9 @@
     var appState = { mode: 'browse', drawMethod: 'None', currentStyle: { color: '#3388ff', opacity: 0.5, textColor: '#ffffff' }, polygons: [], drawPath: [], tempPolyline: null, tempMouseLine: null, canSnapClose: false, snapHintCircle: null, analysisOverlays: [], tempResultData: [], isSaving: false, isDrawing: false, activeFilters: new Set(['District', 'Street', 'Community', 'Custom', 'Road', 'Reconstruct']) };
     var ID_COUNTER = 1;
     var DEFAULT_NAME_IDX = 1;
+    var tempHighlighter = null; 
+    var highlightAnimReq = null;
 
-    // --- Filter Logic ---
     function updateFilterUI()
     {
         var panel = document.getElementById('filter_list');
@@ -618,7 +610,6 @@
         });
     }
 
-    // --- Core Logic ---
     window.updateStyleState = function()
     {
         var col = document.getElementById('tool_color').value;
@@ -672,7 +663,6 @@
         appState.drawMethod = method;
         document.getElementById('mode_select_modal').style.display = 'none';
         updateStyleState();
-        
         if (method === 'PolylineRoad' || method === 'FreehandRoad')
         {
             document.getElementById('row_width').style.display = 'flex';
@@ -700,7 +690,6 @@
         map.setDefaultCursor("crosshair");
     };
 
-    // --- Inputs ---
     var keyState = { w: false, a: false, s: false, d: false };
     var isPanningLoopActive = false;
     document.addEventListener('keydown', function(e)
@@ -1226,10 +1215,25 @@
         geoms.forEach(path =>
         {
             var ov = line ? new BMapGL.Polyline(path, {strokeColor:col, strokeWeight:4, strokeOpacity:op}) : new BMapGL.Polygon(path, {fillColor:col, fillOpacity:op, strokeColor:col, strokeWeight:1});
-            ov.addEventListener('click', function()
+            
+            // 【双击聚焦】
+            ov.addEventListener('dblclick', function()
             {
                 window.focusPoly(id);
+                // 通知 C++
+                console.log("UE_DBLCLICK:" + id);
             });
+
+            // 【悬浮高亮】
+            ov.addEventListener('mouseover', function()
+            {
+                highlightPoly(id, path);
+            });
+            ov.addEventListener('mouseout', function()
+            {
+                unhighlightPoly();
+            });
+
             ov.customData = { id: id, type: typeStr, tag: tag };
             map.addOverlay(ov);
             polygonOverlays.push(ov);
@@ -1248,6 +1252,48 @@
         updateFilterUI();
         var randomTag = new Date().getTime();
         console.log("UE_ADD:" + id + "|" + name + "|" + typeStr + "|" + parentId + "|" + col + "|" + op + "|" + txtCol + "|" + tag + "|" + height + "|" + randomTag);
+    }
+
+    function highlightPoly(id, path)
+    {
+        if (appState.mode !== 'browse') return;
+        unhighlightPoly();
+        tempHighlighter = new BMapGL.Polyline(path, {
+            strokeColor: '#00FFFF', 
+            strokeWeight: 6,        
+            strokeOpacity: 0.8,
+            strokeStyle: 'solid'
+        });
+        map.addOverlay(tempHighlighter);
+        var step = 0;
+        var direction = 1;
+        function animateGlow()
+        {
+            if (!tempHighlighter) return;
+            step += 0.05 * direction;
+            if (step >= 1) direction = -1;
+            if (step <= 0) direction = 1;
+            var alpha = 0.5 + (step * 0.5); 
+            var weight = 6 + (step * 2);
+            tempHighlighter.setStrokeOpacity(alpha);
+            tempHighlighter.setStrokeWeight(weight);
+            highlightAnimReq = requestAnimationFrame(animateGlow);
+        }
+        animateGlow();
+    }
+
+    function unhighlightPoly()
+    {
+        if (highlightAnimReq)
+        {
+            cancelAnimationFrame(highlightAnimReq);
+            highlightAnimReq = null;
+        }
+        if (tempHighlighter)
+        {
+            map.removeOverlay(tempHighlighter);
+            tempHighlighter = null;
+        }
     }
 
     function openSearchModal()
@@ -1310,81 +1356,7 @@
         }
     }
 
-    // 【新增】自动获取行政区划边界 (调用百度 API)
-    window.fetchBoundary = function()
-    {
-        var name = document.getElementById('boundary_input').value.trim();
-        if (!name)
-        {
-            alert("请输入行政区名称！");
-            return;
-        }
-        
-        showHint("正在从百度地图获取 '" + name + "' 的轮廓...");
-        
-        var bdary = new BMapGL.Boundary();
-        bdary.get(name, function(rs)
-        {
-            if (rs.boundaries.length === 0)
-            {
-                alert("未找到名为 '" + name + "' 的行政区划。\n请尝试输入全称，如：'上海市黄浦区外滩街道'");
-                hideHint();
-                return;
-            }
-            
-            // 解析第一个边界数据
-            var strCoords = rs.boundaries[0]; 
-            var pts = strCoords.split(';').map(function(s)
-            {
-                var arr = s.split(',');
-                return [parseFloat(arr[0]), parseFloat(arr[1])];
-            });
-            
-            // 确保首尾闭合
-            if (pts.length > 0)
-            {
-                var first = pts[0];
-                var last = pts[pts.length - 1];
-                if (first[0] !== last[0] || first[1] !== last[1])
-                {
-                    pts.push(first);
-                }
-            }
-            
-            // 转为 Turf Polygon
-            var poly = turf.polygon([pts]);
-            var simplePoly = turf.simplify(poly, {tolerance: 0.00001, highQuality: false});
-            
-            // 自动填充信息
-            document.getElementById('poly_name_input').value = name;
-            
-            // 自动判断类型
-            var typeSel = document.getElementById('type_selector');
-            if (name.includes("区") || name.includes("县"))
-            {
-                typeSel.value = 'District';
-            }
-            else if (name.includes("街道") || name.includes("镇") || name.includes("乡"))
-            {
-                typeSel.value = 'Street';
-            }
-            else
-            {
-                typeSel.value = 'Custom';
-            }
-            onTypeChanged();
-            
-            prepareSingleSave(simplePoly);
-            showHint("已生成轮廓，请点击保存");
-            
-            // 聚焦
-            var center = turf.centerOfMass(simplePoly).geometry.coordinates;
-            map.setCenter(new BMapGL.Point(center[0], center[1]));
-            map.setZoom(14);
-        });
-    };
-
-    window.updatePolyAttributes = function(id, newName, newColor, newOpacity, newTxtCol)
+    window.updatePolyAttributes = function(id, newName, newColor, newOpacity, newTxtCol, newParentId)
     {
         var target = appState.polygons.find(p => p.geoJson.properties.id === id);
         if (!target) return;
@@ -1392,6 +1364,7 @@
         target.geoJson.properties.svCol = newColor;
         target.geoJson.properties.svOp = newOpacity;
         target.geoJson.properties.svTxtCol = newTxtCol;
+        target.geoJson.properties.pid = newParentId;
         var ovs = Array.isArray(target.overlay) ? target.overlay : [target.overlay];
         ovs.forEach(o =>
         {

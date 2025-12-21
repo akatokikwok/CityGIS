@@ -5,12 +5,20 @@
 
 void UGISPolyItem::NativeConstruct()
 {
-	Super::NativeConstruct();
+    Super::NativeConstruct();
 
-	if (Btn_Focus) Btn_Focus->OnClicked.AddDynamic(this, &UGISPolyItem::OnFocusClicked);
-	if (Btn_Delete) Btn_Delete->OnClicked.AddDynamic(this, &UGISPolyItem::OnDeleteClicked);
-	// 【新增】绑定编辑按钮
-	if (Btn_Edit) Btn_Edit->OnClicked.AddDynamic(this, &UGISPolyItem::OnEditClicked);
+    if (Btn_Focus)
+    {
+        Btn_Focus->OnClicked.AddUniqueDynamic(this, &UGISPolyItem::OnFocusClicked);
+    }
+    if (Btn_Delete)
+    {
+        Btn_Delete->OnClicked.AddUniqueDynamic(this, &UGISPolyItem::OnDeleteClicked);
+    }
+    if (Btn_Edit)
+    {
+        Btn_Edit->OnClicked.AddUniqueDynamic(this, &UGISPolyItem::OnEditClicked);
+    }
 }
 
 void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FString InParentID, FString InColor, float InOpacity, FString InTextColor, FString InTag, float InHeight, UGISWebWidget* InMainUI)
@@ -22,7 +30,8 @@ void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FStri
     this->ItemOpacity = InOpacity;
     this->ItemTextColor = InTextColor;
     this->ItemTag = InTag;
-    this->ItemHeight = InHeight; // 【新增】保存高度
+    this->ItemHeight = InHeight;
+    this->ItemParentID = InParentID;
     this->MainUI = InMainUI;
 
     if (Txt_Name)
@@ -30,44 +39,38 @@ void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FStri
         Txt_Name->SetText(FText::FromString(InName));
     }
     
-    // --- 1. 处理类型显示逻辑 ---
     FString DisplayType = InType;
-    
-    if (InType == "District") 
+    if (InType == "District")
     {
         DisplayType = TEXT("区镇");
     }
-    else if (InType == "Street") 
+    else if (InType == "Street")
     {
         DisplayType = TEXT("街道");
     }
-    else if (InType == "Community") 
+    else if (InType == "Community")
     {
         DisplayType = TEXT("小区");
     }
-    else if (InType == "Reconstruct") 
+    else if (InType == "Reconstruct")
     {
         DisplayType = TEXT("重构");
     }
-    else if (InType == "Custom") 
+    else if (InType == "Custom")
     {
         DisplayType = TEXT("自定义");
     }
-    else if (InType == "Road") // 【新增】道路类型显示
+    else if (InType == "Road")
     {
         DisplayType = TEXT("道路");
     }
 
-    // 【新增】拼接标签 (Tag)
     if (!InTag.IsEmpty()) 
     {
         DisplayType += TEXT(" | ") + InTag;
     }
-    
-    // 【新增】拼接高度 (Height)，如果有值的话
-    if (InHeight > 0.0f)
+    if (InHeight > 0)
     {
-        // 显示为 " | H:20m"
         DisplayType += FString::Printf(TEXT(" | H:%.0fm"), InHeight);
     }
 
@@ -76,7 +79,6 @@ void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FStri
         Txt_Type->SetText(FText::FromString(DisplayType));
     }
 
-    // --- 2. 设置颜色条与缩进 ---
     if (Content_Border)
     {
         float Indent = 0.0f;
@@ -101,14 +103,13 @@ void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FStri
             BgColor = FLinearColor(0.0f, 0.5f, 0.5f, 0.6f);
             Indent = 40.0f;
         } 
-        else if (InType == "Road") // 【新增】道路样式
+        else if (InType == "Road") 
         {
-            BgColor = FLinearColor(0.2f, 0.2f, 0.2f, 0.8f); // 深灰色背景
-            Indent = 40.0f; // 与小区同级缩进
+            BgColor = FLinearColor(0.2f, 0.2f, 0.2f, 0.8f);
+            Indent = 40.0f;
         }
 
-        // Content_Border->SetBrushColor(BgColor);
-        
+        Content_Border->SetBrushColor(BgColor);
         if (Child_Container)
         {
             Child_Container->SetRenderTranslation(FVector2D(Indent, 0));
@@ -116,36 +117,49 @@ void UGISPolyItem::SetupItem(FString InID, FString InName, FString InType, FStri
     }
 }
 
-void UGISPolyItem::AddChildItem(UGISPolyItem* ChildWidget)
+void UGISPolyItem::UpdateData(FString NewName, FString NewColor, float NewOpacity, FString NewTextColor, FString NewParentID)
 {
-	if (Child_Container && ChildWidget)
-	{
-		Child_Container->AddChild(ChildWidget);
-	}
+    this->ItemName = NewName;
+    this->ItemColor = NewColor;
+    this->ItemOpacity = NewOpacity;
+    this->ItemTextColor = NewTextColor;
+    this->ItemParentID = NewParentID;
+
+    if (Txt_Name)
+    {
+        Txt_Name->SetText(FText::FromString(NewName));
+    }
 }
 
-void UGISPolyItem::UpdateData(FString NewName, FString NewColor, float NewOpacity, FString NewTextColor)
-{
-	this->ItemName = NewName;
-	this->ItemColor = NewColor;
-	this->ItemOpacity = NewOpacity;
-	this->ItemTextColor = NewTextColor;
-
-	if (Txt_Name) Txt_Name->SetText(FText::FromString(NewName));
+void UGISPolyItem::AddChildItem(UGISPolyItem* ChildWidget) 
+{ 
+    if (Child_Container && ChildWidget) 
+    {
+        Child_Container->AddChild(ChildWidget); 
+    }
 }
 
-void UGISPolyItem::OnFocusClicked()
-{
-	if (MainUI.IsValid()) MainUI->FocusID(ItemID);
+void UGISPolyItem::OnFocusClicked() 
+{ 
+    if (MainUI.IsValid())
+    {
+        MainUI->FocusID(ItemID); 
+    }
 }
 
-void UGISPolyItem::OnDeleteClicked()
-{
-	if (MainUI.IsValid()) MainUI->DeleteID(ItemID);
-	this->RemoveFromParent();
+void UGISPolyItem::OnDeleteClicked() 
+{ 
+    if (MainUI.IsValid())
+    {
+        MainUI->DeleteID(ItemID); 
+    }
+    this->RemoveFromParent(); 
 }
 
-void UGISPolyItem::OnEditClicked()
-{
-	if (MainUI.IsValid()) MainUI->OpenEditDialog(this);
+void UGISPolyItem::OnEditClicked() 
+{ 
+    if (MainUI.IsValid())
+    {
+        MainUI->OpenEditDialog(this); 
+    }
 }
