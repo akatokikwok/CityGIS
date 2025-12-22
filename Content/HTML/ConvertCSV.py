@@ -6,9 +6,10 @@ import datetime
 import uuid
 
 # ================= 配置区 =================
-INPUT_FILE = 'subdistrict.csv'
+INPUT_FILE = 'exported_subdistrict_db.csv'
 OUTPUT_FILE = 'Imported_Streets.json'
-COORD_TYPE = 'GCJ02' # 房产数据通常是 GCJ02 (高德/腾讯坐标)，如果是 WGS84 请改为 'WGS84'
+# COORD_TYPE = 'GCJ02' # 房产数据通常是 GCJ02 (高德/腾讯坐标)，如果是 WGS84 请改为 'WGS84'
+COORD_TYPE = 'BD09' # 数据源已经是百度坐标，直接透传，不做转换
 # =========================================
 
 # 坐标转换算法 (GCJ02 -> BD09)
